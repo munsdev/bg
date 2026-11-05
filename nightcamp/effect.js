@@ -28,11 +28,12 @@
     { key: 'wireY', label: 'Position', min: .25, max: .95, step: .01, def: .55 },
     { key: 'wireGap', label: 'Strand spacing', min: .06, max: .3, step: .01, def: .22 },
     { key: 'wireWidth', label: 'Thickness', min: 1, max: 12, step: .25, def: 6 },
-    { key: 'barbSize', label: 'Barb size', min: .4, max: 2, step: .05, def: 1.3 },
+    { key: 'barbSize', label: 'Barb length', min: .4, max: 2, step: .05, def: 1 },
+    { key: 'barbSpacing', label: 'Barb spacing', min: 30, max: 300, step: 5, def: 95 },
+    { key: 'barbVariety', label: 'Barb variety', min: 0, max: 1, step: .05, def: .8 },
     { key: 'wireSoft', label: 'Out of focus', min: 0, max: 1, step: .05, def: .5 },
     { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 2 },
     { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -1.5 },
-    { key: 'post', label: 'Fence post (foreground)', type: 'toggle', def: true },
     { group: 'Wind', key: 'wind', label: 'Wind', min: 0, max: 2, step: .05, def: .6 },
     { key: 'gustPointer', label: 'Pointer stirs wire', min: 0, max: 1, step: .05, def: .5 },
     { group: 'Atmosphere', key: 'fog', label: 'Fog', min: 0, max: 1, step: .05, def: .65 },
@@ -55,39 +56,91 @@
     return !(pos && neg);
   };
 
-  /* Barbed wire tile (own drawing, no license strings attached). Two twisted wires, two barbs per tile,
-     each barb a tight coil with four tapered spikes. Tiles seamlessly along x. Returns { svg, w, h, cy }. */
+  /* Barbed wire, drawn as SVG (own drawing, free to use).
+     ropeSVG: the twisted pair on its own, a seamless tile along x, with rust and pitting from a tile-safe noise filter.
+     barbSVG: one barb (coil + four spikes) seen at a given rotation around the wire, split into the spikes behind the
+     wire ('back') and the coil + spikes in front ('front'), so the rope can be drawn in between.
+     stripSVG: rope + a few barbs combined into one seamless tile, for use outside the effect. */
   const hex2 = (a, b, t) => { const A = hexv(a), B = hexv(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
-  function wireSVG(col, barb, soft) {
-    const T = 288, spike = 40 * barb, Ht = Math.ceil(2 * (spike * .95 + 10)), cy = Ht / 2;
-    const dark = hex2(col, '#000000', .2), mid = hex2(col, '#4a4f56', .28), hi = hex2(col, '#8f969f', .45);
-    const f = n => n.toFixed(2);
-    let o = '<svg xmlns="http://www.w3.org/2000/svg" width="' + T + '" height="' + Ht + '" viewBox="0 0 ' + T + ' ' + Ht + '">' +
-      '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + hi + '"/><stop offset=".42" stop-color="' + mid + '"/><stop offset="1" stop-color="' + dark + '"/></linearGradient>' +
-      '<linearGradient id="s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="' + dark + '"/><stop offset=".45" stop-color="' + hi + '"/><stop offset="1" stop-color="' + dark + '"/></linearGradient>' +
-      (soft > 0 ? '<filter id="b" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="' + f(soft * 1.3) + '"/></filter>' : '') +
-      '</defs><g' + (soft > 0 ? ' filter="url(#b)"' : '') + '>';
-    const barbs = [[78, [-62, -121, 57, 116], [1, .9, .95, 1.05]], [222, [-55, -127, 64, 112], [.92, 1.05, 1, .9]]];
-    const spikes = bx => { let r = ''; const b = barbs.find(q => q[0] === bx);
-      b[1].forEach((deg, i) => {
-        const a = deg * Math.PI / 180, L = spike * b[2][i], ca = Math.cos(a), sa = Math.sin(a), nx = -sa * 2, ny = ca * 2;
-        const x0 = bx + ca * 3, y0 = cy + sa * 3, tx = bx + ca * L, ty = cy + sa * L, bend = (i % 2 ? 1 : -1) * L * .03;
-        const mx = bx + ca * L * .55 + nx * bend / 2, my = cy + sa * L * .55 + ny * bend / 2;
-        // tapered spike with a slanted cut at the tip
-        r += '<path d="M' + f(x0 + nx) + ' ' + f(y0 + ny) + ' Q' + f(mx + nx * .6) + ' ' + f(my + ny * .6) + ' ' + f(tx) + ' ' + f(ty) +
-          ' L' + f(tx - ca * 3 - nx * .5) + ' ' + f(ty - sa * 3 - ny * .5) + ' Q' + f(mx - nx * .6) + ' ' + f(my - ny * .6) + ' ' + f(x0 - nx) + ' ' + f(y0 - ny) + 'Z" fill="url(#s)" stroke="' + dark + '" stroke-width=".7" stroke-linejoin="round"/>';
-      });
-      return r; };
-    barbs.forEach(b => { o += spikes(b[0]); });
-    // the main twisted pair: a solid core, then overlapping slanted segments alternating between the two wires
-    o += '<rect x="-2" y="' + f(cy - 4.6) + '" width="' + (T + 4) + '" height="9.2" fill="' + dark + '"/>';
+  const fx = n => (+n).toFixed(2);
+  const ROPE_T = 288, ROPE_H = 24;
+  function wireColors(col) { return { dark: hex2(col, '#000000', .2), mid: hex2(col, '#4a4f56', .28), hi: hex2(col, '#8f969f', .45) }; }
+  function ropeBody(col, id, x0) {
+    const C = wireColors(col), cy = ROPE_H / 2, T = ROPE_T; let o = '';
+    o += '<rect x="' + (x0 - 2) + '" y="' + fx(cy - 4.6) + '" width="' + (T + 4) + '" height="9.2" fill="' + C.dark + '"/>';
     for (let x = -24, i = 0; x <= T + 24; x += 12, i++) {
-      const yo = i % 2 ? .6 : -.6;
-      o += '<g transform="translate(' + (x + 6) + ' ' + f(cy + yo) + ') rotate(-34)"><rect x="-11.5" y="-3.7" width="23" height="7.4" rx="3.7" fill="url(#g)" stroke="' + dark + '" stroke-width=".8"/></g>';
+      const xm = ((x % T) + T) % T, shade = .08 + .22 * hash(xm * .37 + 1), yo = i % 2 ? .6 : -.6;
+      o += '<g transform="translate(' + (x0 + x + 6) + ' ' + fx(cy + yo) + ') rotate(-34)"><rect x="-11.5" y="-3.7" width="23" height="7.4" rx="3.7" fill="url(#' + id + 'g)" stroke="' + C.dark + '" stroke-width=".8"/>' +
+        '<rect x="-11.5" y="-3.7" width="23" height="7.4" rx="3.7" fill="#000" opacity="' + fx(shade) + '"/></g>';
     }
-    // coils where the barbs are wrapped on
-    barbs.forEach(b => { for (let j = 0; j < 4; j++) o += '<ellipse cx="' + (b[0] - 6 + j * 4) + '" cy="' + cy + '" rx="2.5" ry="7.2" transform="rotate(-16 ' + (b[0] - 6 + j * 4) + ' ' + cy + ')" fill="url(#s)" stroke="' + dark + '" stroke-width=".7"/>'; });
-    return { svg: o + '</g></svg>', w: T, h: Ht, cy };
+    return o;
+  }
+  function ropeDefs(col, id, soft, w, h) {
+    const C = wireColors(col);
+    return '<linearGradient id="' + id + 'g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + C.hi + '"/><stop offset=".42" stop-color="' + C.mid + '"/><stop offset="1" stop-color="' + C.dark + '"/></linearGradient>' +
+      // rust blotches + bright pitting, from noise that stitches at the tile edges; then the focus blur
+      '<filter id="' + id + 't" filterUnits="userSpaceOnUse" x="0" y="0" width="' + w + '" height="' + h + '" color-interpolation-filters="sRGB">' +
+      '<feTurbulence type="fractalNoise" baseFrequency=".18 .6" numOctaves="3" seed="7" stitchTiles="stitch" result="n"/>' +
+      '<feColorMatrix in="n" type="matrix" values="0 0 0 0 .19  0 0 0 0 .12  0 0 0 0 .07  0 0 0 -4.5 2.05" result="ru"/>' +
+      '<feComposite in="ru" in2="SourceGraphic" operator="atop" result="r1"/>' +
+      '<feTurbulence type="fractalNoise" baseFrequency="1.4" numOctaves="1" seed="3" stitchTiles="stitch" result="n2"/>' +
+      '<feColorMatrix in="n2" type="matrix" values="0 0 0 0 .42  0 0 0 0 .44  0 0 0 0 .46  0 0 0 10 -7.6" result="sp"/>' +
+      '<feComposite in="sp" in2="SourceGraphic" operator="in" result="sp2"/>' +
+      '<feMerge result="tx"><feMergeNode in="r1"/><feMergeNode in="sp2"/></feMerge>' +
+      (soft > 0 ? '<feGaussianBlur in="tx" stdDeviation="' + fx(soft * 1.1) + '"/>' : '') + '</filter>';
+  }
+  function ropeSVG(col, soft) {
+    const id = 'r';
+    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + ROPE_T + '" height="' + ROPE_H + '" viewBox="0 0 ' + ROPE_T + ' ' + ROPE_H + '"><defs>' + ropeDefs(col, id, soft, ROPE_T, ROPE_H) + '</defs><g filter="url(#' + id + 't)">' + ropeBody(col, id, 0) + '</g></svg>', w: ROPE_T, h: ROPE_H };
+  }
+  function barbGeom(len, seed, variety) {
+    let st = (seed * 2654435761) >>> 0 || 1; const rnd = () => { st = (Math.imul(st ^ (st >>> 15), 2246822507) + 0x9e3779b9) >>> 0; return st / 4294967296; };
+    const phi = rnd() * Math.PI * 2 * variety + (1 - variety) * .35, sp = [];
+    for (let i = 0; i < 4; i++) {
+      const th = phi + i * Math.PI / 2 + (rnd() - .5) * .7 * variety, sgn = i % 2 ? -1 : 1;
+      const al = (57 + (rnd() - .5) * 22 * variety) * Math.PI / 180, L = len * (1 + (rnd() - .5) * .35 * variety);
+      sp.push({ d: [sgn * Math.cos(al), Math.sin(al) * Math.cos(th), Math.sin(al) * Math.sin(th)], th, sgn, L, bend: (rnd() - .5) * .14 * (.3 + variety) });
+    }
+    return { sp, wraps: 3 + Math.floor(rnd() * 2.99), tiltC: -12 + rnd() * 10 * variety };
+  }
+  function barbBody(col, id, g, cx, cy, layer) {
+    const C = wireColors(col); let o = '';
+    for (const p of g.sp) {
+      const front = p.d[2] >= 0; if ((layer === 'front') !== front) continue;
+      const bx = cx + p.sgn * 2, by = cy + 3.2 * Math.cos(p.th), tx = bx + p.d[0] * p.L, ty = by + p.d[1] * p.L;
+      const sl = Math.hypot(tx - bx, ty - by);
+      if (sl < 2.5) { o += '<circle cx="' + fx(bx) + '" cy="' + fx(by) + '" r="2.2" fill="' + C.mid + '" stroke="' + C.dark + '" stroke-width=".6"/>'; continue; }
+      const ux = (tx - bx) / sl, uy = (ty - by) / sl, nx = -uy * 2, ny = ux * 2, mx = bx + (tx - bx) * .55 - uy * p.bend * sl, my = by + (ty - by) * .55 + ux * p.bend * sl;
+      const cut = Math.min(3, sl * .25);
+      o += '<path d="M' + fx(bx + nx) + ' ' + fx(by + ny) + ' Q' + fx(mx + nx * .6) + ' ' + fx(my + ny * .6) + ' ' + fx(tx) + ' ' + fx(ty) +
+        ' L' + fx(tx - ux * cut - nx * .5) + ' ' + fx(ty - uy * cut - ny * .5) + ' Q' + fx(mx - nx * .6) + ' ' + fx(my - ny * .6) + ' ' + fx(bx - nx) + ' ' + fx(by - ny) +
+        'Z" fill="' + (front ? 'url(#' + id + 's)' : C.dark) + '" stroke="' + C.dark + '" stroke-width=".7" stroke-linejoin="round"/>';
+    }
+    if (layer === 'front') for (let j = 0; j < g.wraps; j++) {
+      const x = cx - (g.wraps - 1) * 2 + j * 4;
+      o += '<ellipse cx="' + fx(x) + '" cy="' + fx(cy) + '" rx="2.4" ry="6.8" transform="rotate(' + fx(g.tiltC) + ' ' + fx(x) + ' ' + fx(cy) + ')" fill="url(#' + id + 'c)" stroke="' + C.dark + '" stroke-width=".7"/>';
+    }
+    return o;
+  }
+  function barbDefs(col, id, soft) {
+    const C = wireColors(col);
+    return '<linearGradient id="' + id + 's" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="' + C.dark + '"/><stop offset=".45" stop-color="' + C.hi + '"/><stop offset="1" stop-color="' + C.dark + '"/></linearGradient>' +
+      '<linearGradient id="' + id + 'c" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="' + C.dark + '"/><stop offset=".5" stop-color="' + C.mid + '"/><stop offset="1" stop-color="' + C.dark + '"/></linearGradient>' +
+      (soft > 0 ? '<filter id="' + id + 'b" x="-10%" y="-10%" width="120%" height="120%"><feGaussianBlur stdDeviation="' + fx(soft * 1.1) + '"/></filter>' : '');
+  }
+  function barbSVG(col, len, soft, seed, variety, layer) {
+    const S = Math.ceil(2 * (len * 1.25 + 10)), c = S / 2, id = 'b', g = barbGeom(len, seed, variety);
+    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + S + '" height="' + S + '" viewBox="0 0 ' + S + ' ' + S + '"><defs>' + barbDefs(col, id, soft) + '</defs><g' + (soft > 0 ? ' filter="url(#' + id + 'b)"' : '') + '>' + barbBody(col, id, g, c, c, layer) + '</g></svg>', w: S, h: S };
+  }
+  function stripSVG(col, len, variety) {                   // standalone: rope + barbs in one seamless tile
+    const T = ROPE_T, pad = Math.ceil(len * 1.25 + 10), Hh = Math.max(ROPE_H, 2 * pad), cy = Hh / 2, xs = [40, 135, 225];
+    let o = '<svg xmlns="http://www.w3.org/2000/svg" width="' + T + '" height="' + Hh + '" viewBox="0 0 ' + T + ' ' + Hh + '" role="img" aria-label="Barbed wire"><defs>' +
+      ropeDefs(col, 'r', 0, T, Hh) + barbDefs(col, 'b', 0) + '</defs>';
+    const geoms = xs.map((x, i) => barbGeom(len, 11 + i * 7, variety));
+    xs.forEach((x, i) => { o += barbBody(col, 'b', geoms[i], x, cy, 'back'); });
+    o += '<g filter="url(#rt)" transform="translate(0 ' + (cy - ROPE_H / 2) + ')">' + ropeBody(col, 'r', 0) + '</g>';
+    xs.forEach((x, i) => { o += barbBody(col, 'b', geoms[i], x, cy, 'front'); });
+    return o + '</svg>';
   }
 
   /* tileable fractal noise, used for drifting sky clouds */
@@ -138,7 +191,8 @@
     let blocks = [], wins = [], posts = [], lamps = [], trees = [];
     const m = { x: -1e4, y: -1e4 }; let active = false, lastMove = -1e9, energy = 0, raw = 0, lx = 0, ly = 0;
     let t = 0, tw = 0, clock = 0, idleNext = 0, lampEv = { until: 0, next: 800, seed: 0 };
-    let wireTex = null, wireInfo = null, wireKey = '', wireLoading = '';
+    let wireTex = null, wireInfo = null, barbSpr = null, wireKey = '', wireLoading = '';
+    const NV = 8;
     const pr = (x, y, z) => [vx + f * x / z, vy + f * (HE - y) / z];
     const fogAt = z => 1 - Math.exp(-z / 38 * (.4 + P.fog * 1.2));
 
@@ -288,13 +342,6 @@
         q.fillStyle = rgba('#fff3d6', Math.min(1, .7 * I)); q.beginPath(); q.arc(L.head[0], L.head[1], Math.max(1.2, 4 * f / L.z / 16), 0, 6.3); q.fill();
         q.globalCompositeOperation = 'source-over';
       }
-      if (P.post) {                                         // we are standing outside the fence: a big out-of-focus post at the edge
-        const pw = u * .06, x0 = W * .035 - pw / 2, lean = u * .006;
-        g = q.createLinearGradient(x0, 0, x0 + pw, 0); g.addColorStop(0, mixc(P.sky, '#000000', .55)); g.addColorStop(.25, '#0a0b0e'); g.addColorStop(1, '#050608');
-        q.fillStyle = g; q.beginPath(); q.moveTo(x0 - lean, H + 4); q.lineTo(x0 + lean, -4); q.lineTo(x0 + pw + lean, -4); q.lineTo(x0 + pw - lean, H + 4); q.closePath(); q.fill();
-        const gap = H * P.wireGap, n = P.strands | 0;
-        for (let k = 0; k < n; k++) { const y = H * P.wireY + (k - (n - 1) / 2) * gap; q.fillStyle = '#050608'; q.fillRect(x0 + pw * .55, y - u * .012, pw * .7, u * .024); }
-      }
       if (P.exposure > 1) { q.globalCompositeOperation = 'lighter'; q.fillStyle = rgba(P.sky, (P.exposure - 1) * .3); q.fillRect(0, 0, W, H); q.globalCompositeOperation = 'source-over'; }
       else if (P.exposure < 1) { q.fillStyle = 'rgba(0,0,0,' + ((1 - P.exposure) * .8) + ')'; q.fillRect(0, 0, W, H); }
       // low fog drifting over the ground
@@ -315,20 +362,35 @@
       const dx = (x - lx) / (W * .2); y += P.gustPointer * energy * Math.exp(-dx * dx) * Math.sin(tw * 6.5 - x * .02 + ph) * 14 * sc;
       return y;
     }
-    // Rasterise the SVG tile once per wire color / barb size / focus setting.
+    // Rasterise the rope tile and the barb variants once per wire color / barb length / focus / variety.
+    const raster = (info, R) => new Promise(res => {
+      const img = new Image();
+      img.onload = () => { const c2 = document.createElement('canvas'); c2.width = Math.ceil(info.w * R); c2.height = Math.ceil(info.h * R); c2.getContext('2d').drawImage(img, 0, 0, c2.width, c2.height); res(c2); };
+      img.onerror = () => res(null);
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(info.svg);
+    });
     function ensureWireTex() {
-      const key = [P.wire, P.barbSize, P.wireSoft].join('|');
+      const key = [P.wire, P.barbSize, P.wireSoft, P.barbVariety].join('|');
       if (key === wireKey || key === wireLoading) return;
       wireLoading = key;
-      const info = wireSVG(P.wire, P.barbSize, P.wireSoft), img = new Image();
-      img.onload = () => {
+      const len = 30 * P.barbSize, rope = ropeSVG(P.wire, P.wireSoft), jobs = [raster(rope, 3)];
+      for (let v = 0; v < NV; v++) for (const layer of ['back', 'front']) jobs.push(raster(barbSVG(P.wire, len, P.wireSoft, v + 1, P.barbVariety, layer), 3));
+      Promise.all(jobs).then(r => {
         if (wireLoading !== key) return;
-        const R = 3, c2 = document.createElement('canvas'); c2.width = info.w * R; c2.height = info.h * R;
-        c2.getContext('2d').drawImage(img, 0, 0, c2.width, c2.height);
-        wireTex = c2; wireInfo = info; wireKey = key; wireLoading = '';
+        wireTex = r[0]; wireInfo = rope;
+        barbSpr = []; for (let v = 0; v < NV; v++) barbSpr.push({ back: r[1 + v * 2], front: r[2 + v * 2], S: barbSVG(P.wire, len, 0, v + 1, P.barbVariety, 'front').w });
+        wireKey = key; wireLoading = '';
         if (!raf) drawOnce();
-      };
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(info.svg);
+      });
+    }
+    function barbsAlong(c, list, ts, layer) {
+      for (const b of list) {
+        const spr = barbSpr[b.v], img = spr[layer]; if (!img) continue;
+        const size = spr.S * ts, cs = Math.cos(b.a), sn = Math.sin(b.a);
+        c.setTransform(dpr * cs * b.f, dpr * sn * b.f, -dpr * sn, dpr * cs, dpr * b.x, dpr * b.y);
+        c.drawImage(img, -size / 2, -size / 2, size, size);
+      }
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     // Lay the tile along a polyline: one thin slice per segment, rotated to the segment, so the strand bends as it sways.
     function laneAlong(c, pts, ts, phase) {
@@ -349,8 +411,8 @@
     }
     function drawWire(c, lampI) {
       ensureWireTex();
-      const S = P.strands | 0, gapPx = H * P.wireGap, wsc = Math.max(.95, u / 1000), wpx = P.wireWidth * wsc, x0 = P.post ? W * .035 : -12;
-      const tilt = Math.tan(P.wireTilt * RAD), ts = wpx * .13;
+      const S = P.strands | 0, gapPx = H * P.wireGap, wsc = Math.max(.95, u / 1000), wpx = P.wireWidth * wsc, x0 = -12;
+      const tilt = Math.tan(P.wireTilt * RAD), ts = wpx * .13, spacing = Math.max(10, P.barbSpacing * wsc);
       c.lineCap = 'round'; c.lineJoin = 'round';
       for (let k = 0; k < S; k++) {
         const by = H * P.wireY + (k - (S - 1) / 2) * gapPx, ph = k * 1.7 + .6, sag = P.wireSag * sc, pts = [];
@@ -362,14 +424,20 @@
           c.strokeStyle = rgba(P.wire, .28 * P.wireSoft); c.lineWidth = wpx * 2.6;
           c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
         }
-        if (wireTex) laneAlong(c, pts, ts, hash(k * 5.1) * wireInfo.w);
-        if (lampI > .02) {                                      // warm glint from the street lamp
-          const hl = lamps[0].head, g = c.createRadialGradient(hl[0], hl[1], 0, hl[0], hl[1], W * .5);
-          g.addColorStop(0, rgba(P.lamp, .3 * lampI * P.lampLevel)); g.addColorStop(1, rgba(P.lamp, 0));
-          c.globalCompositeOperation = 'lighter'; c.strokeStyle = g; c.lineWidth = Math.max(.6, wpx * .16);
-          c.beginPath(); pts.forEach((p, i) => { const y = p[1] - wpx * .35; i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke();
-          c.globalCompositeOperation = 'source-over';
+        if (!wireTex || !barbSpr) continue;
+        // barb positions along the strand: set spacing with a little irregularity, each a random variant, some mirrored
+        const list = []; let s0 = hash(k * 3.3) * spacing, seg = 0, acc = 0, j = 0;
+        while (true) {
+          while (seg < pts.length - 1) { const d = Math.hypot(pts[seg + 1][0] - pts[seg][0], pts[seg + 1][1] - pts[seg][1]); if (acc + d >= s0) break; acc += d; seg++; }
+          if (seg >= pts.length - 1) break;
+          const A = pts[seg], B = pts[seg + 1], d = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, t = (s0 - acc) / d;
+          list.push({ x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t, a: Math.atan2(B[1] - A[1], B[0] - A[0]) + Math.sin(tw * 1.4 + j + k) * .05,
+            v: Math.floor(hash(k * 29 + j * 7.3) * NV) % NV, f: hash(k * 13 + j * 3.1) < .5 ? -1 : 1 });
+          j++; s0 += spacing * (1 + (hash(k * 17 + j * 1.9) - .5) * .5 * P.barbVariety);
         }
+        barbsAlong(c, list, ts, 'back');
+        laneAlong(c, pts, ts, hash(k * 5.1) * wireInfo.w);
+        barbsAlong(c, list, ts, 'front');
       }
     }
 
@@ -435,5 +503,5 @@
   }
 
   window.Effects = window.Effects || {};
-  window.Effects.nightcamp = { name: 'Night camp', params, defaults, mount, wireSVG };
+  window.Effects.nightcamp = { name: 'Night camp', params, defaults, mount, ropeSVG, barbSVG, stripSVG };
 })();

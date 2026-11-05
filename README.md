@@ -31,11 +31,12 @@ Animated hero backgrounds. Static site, no build step.
 - `nightcamp/`: a blurred night yard in perspective. Barbed wire sways in front, a street lamp flickers, a dim American flag waves in the distance, and a candle lights in a window when you hover it (or on its own when idle / on touch screens).
   - Everything is drawn in code (no images). The background is drawn small and upscaled, which is the blur. "Background blur", "Exposure", "Fog" and "Vignette" set the mood; "Barbed wire" and "Wind" control the wire.
   - Colors are set in the Tune panel. Export gives a self-contained file.
-  - `nightcamp/barbed-wire.svg` is the barbed wire on its own: rope plus three barbs in one tile that repeats seamlessly along x. In the effect the rope and the barbs are separate (`Effects.nightcamp.ropeSVG`, `barbSVG`, `stripSVG`): eight barb variants, each turned to a different angle around the wire, placed at the "Barb spacing" with some irregularity, with spikes behind the wire drawn behind it.
+  - The wire is two round strands twisted loosely ("Twist length" sets how loose). `nightcamp/barbed-wire.svg` is the barbed wire on its own: wire plus three barbs in one tile that repeats seamlessly along x. In the effect the rope and the barbs are separate (`Effects.nightcamp.ropeSVG`, `barbSVG`, `stripSVG`): eight barb variants, each turned to a different angle around the wire, placed at the "Barb spacing" with some irregularity, with spikes behind the wire drawn behind it.
 
 - `oldglory/`: an accurate 50-star flag (Executive Order 10834 proportions and the standard Old Glory red, white and blue), waving, in grayscale by default.
   - "Color around pointer" picks how color comes back: Color trail (paints in and fades), Spotlight, or Ripples (on move and tap). Saturation, contrast and brightness are set separately for the base and for the colored area.
   - "Focus: Stars" keeps the union in view on any screen shape; "Center" centers the flag.
+  - "On tall screens" (phones): Hang vertically (default; stripes vertical, union upper left, as the Flag Code describes for vertical display, which fits a phone almost exactly), Full width (horizontal flag as a band), or Fill (crop).
 
 ## Deploy (Cloudflare Pages)
 

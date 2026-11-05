@@ -6,6 +6,7 @@
 (function () {
   const params = [
     { group: 'Flag', key: 'fit', label: 'Fit', type: 'select', options: [['cover', 'Fill'], ['contain', 'Fit inside']], def: 'cover' },
+    { key: 'portrait', label: 'On tall screens', type: 'select', options: [['hang', 'Hang vertically'], ['width', 'Full width'], ['crop', 'Fill (crop)']], def: 'hang' },
     { key: 'focus', label: 'Focus', type: 'select', options: [['canton', 'Stars (top left)'], ['center', 'Center']], def: 'canton' },
     { key: 'zoom', label: 'Zoom', min: .6, max: 3, step: .05, def: 1.1 },
     { key: 'offX', label: 'Shift X', min: -.5, max: .5, step: .01, def: 0 },
@@ -48,15 +49,18 @@
     for (let i = 1; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r : R; c.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); }
     c.closePath();
   }
-  function paintFlag(c, A, red, white, blue) {             // A = hoist (height) in px; width = 1.9 A
-    const B = A * 1.9, L = A / 13;
-    c.fillStyle = white; c.fillRect(0, 0, B, A);
-    c.fillStyle = red; for (let k = 0; k < 13; k += 2) c.fillRect(0, k * L, B, L);
-    c.fillStyle = blue; c.fillRect(0, 0, A * .76, L * 7);
+  // A = hoist in px. Horizontal: 1.9 A wide, A tall. Vertical (hung against a wall, per the Flag Code): A wide, 1.9 A tall,
+  // stripes run vertically, the union is in the upper left, stars stay upright.
+  function paintFlag(c, A, red, white, blue, vertical) {
+    const B = A * 1.9, L = A / 13, v = !!vertical, rect = (x, y, w, h) => v ? c.fillRect(y, x, h, w) : c.fillRect(x, y, w, h);
+    c.fillStyle = white; rect(0, 0, B, A);
+    c.fillStyle = red; for (let k = 0; k < 13; k += 2) rect(0, k * L, B, L);
+    c.fillStyle = blue; rect(0, 0, A * .76, L * 7);
     c.fillStyle = white; c.beginPath();
     for (let r = 0; r < 9; r++) for (let col = 0; col < 11; col++) {
       if (col % 2 !== r % 2) continue;                       // rows of 6 (even) and 5 (odd), offset
-      starPath(c, (col + 1) * .063 * A, (r + 1) * .054 * A, .0308 * A);
+      const x = (col + 1) * .063 * A, y = (r + 1) * .054 * A;
+      v ? starPath(c, y, x, .0308 * A) : starPath(c, x, y, .0308 * A);
     }
     c.fill();
   }
@@ -75,7 +79,7 @@
     const mk = document.createElement('canvas'), mx = mk.getContext('2d');      // soft mask (low-res)
     const texG = document.createElement('canvas'), texC = document.createElement('canvas');
 
-    let W = 1, H = 1, dpr = 1, k = 1, fw = 1, fh = 1, ms = .25, raf = 0, last = 0, visible = true, texKey = '';
+    let W = 1, H = 1, dpr = 1, k = 1, fw = 1, fh = 1, asp = 1.9, vert = false, ms = .25, raf = 0, last = 0, visible = true, texKey = '';
     const m = { x: 0, y: 0 }, sm = { x: 0, y: 0 };
     let active = false, lastMove = -1e9, raw = 0, energy = 0, t = 0, gT = 0, gustAmp = 1, wx = 0, gi = 0, rings = [], lastRing = null;
     let mb = null, lastPaint = -1e9;                        // screen-space box around everything the mask currently shows
@@ -83,16 +87,19 @@
     function applyBg() { el.style.background = P.bg; }
     function layout() {
       const a = P.tilt * RAD, ca = Math.abs(Math.cos(a)), sa = Math.abs(Math.sin(a));
-      const bw = W * ca + H * sa, bh = W * sa + H * ca, mgn = P.idleAmp * k * 1.8 + 24;
-      fh = P.fit === 'contain' ? Math.min(H, W / 1.9) * .86 * P.zoom : Math.max(bh + 2 * mgn, (bw + 2 * mgn) / 1.9) * P.zoom;
-      fw = fh * 1.9;
+      const bw = W * ca + H * sa, bh = W * sa + H * ca, mgn = P.idleAmp * k * 1.8 + 24, tall = H > W * 1.05;
+      vert = tall && P.portrait === 'hang'; asp = vert ? 1 / 1.9 : 1.9;
+      if (P.fit === 'contain') fh = Math.min(H, W / asp) * .86 * P.zoom;
+      else if (tall && P.portrait === 'width') fh = (bw + 2 * mgn) / asp * P.zoom;          // the whole flag across the screen
+      else fh = Math.max(bh + 2 * mgn, (bw + 2 * mgn) / asp) * P.zoom;
+      fw = fh * asp;
     }
     function buildTex() {
-      const A = Math.round(Math.min(1400, Math.max(390, fh * dpr)) / 13) * 13, key = [A, P.baseSat, P.baseContrast, P.baseBright, P.boostSat, P.boostContrast, P.boostBright].join('|');
+      const A = Math.round(Math.min(1400, Math.max(390, Math.min(fw, fh) * dpr)) / 13) * 13, key = [A, vert, P.baseSat, P.baseContrast, P.baseBright, P.boostSat, P.boostContrast, P.boostBright].join('|');
       if (key === texKey) return; texKey = key;
       for (const [tc, s, c2, b] of [[texG, P.baseSat, P.baseContrast, P.baseBright], [texC, P.boostSat, P.boostContrast, P.boostBright]]) {
-        tc.width = Math.round(A * 1.9); tc.height = A;
-        paintFlag(tc.getContext('2d'), A, tone(RED, s, c2, b), tone(WHITE, s, c2, b), tone(BLUE, s, c2, b));
+        tc.width = Math.round(vert ? A : A * 1.9); tc.height = Math.round(vert ? A * 1.9 : A);
+        paintFlag(tc.getContext('2d'), A, tone(RED, s, c2, b), tone(WHITE, s, c2, b), tone(BLUE, s, c2, b), vert);
       }
     }
     function resize() {
@@ -246,9 +253,10 @@
 
     return {
       update(next) {
-        const geo = ['fit', 'zoom', 'tilt', 'idleAmp'].some(q => next[q] !== undefined && next[q] !== P[q]);
+        const geo = ['fit', 'zoom', 'tilt', 'idleAmp', 'portrait'].some(q => next[q] !== undefined && next[q] !== P[q]);
         Object.assign(P, next); applyBg();
         if (geo) layout(); buildTex();
+        if (geo) { mb = null; }
         if (next.mode !== undefined) { rings = []; mb = null; mx.setTransform(1, 0, 0, 1, 0, 0); mx.clearRect(0, 0, mk.width, mk.height); }
         if (!raf) drawOnce();
       },

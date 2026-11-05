@@ -27,9 +27,10 @@
     { key: 'strands', label: 'Strands', min: 1, max: 5, step: 1, def: 3 },
     { key: 'wireY', label: 'Position', min: .25, max: .95, step: .01, def: .55 },
     { key: 'wireGap', label: 'Strand spacing', min: .06, max: .3, step: .01, def: .22 },
-    { key: 'wireWidth', label: 'Thickness', min: 1, max: 12, step: .25, def: 6 },
+    { key: 'wireWidth', label: 'Thickness', min: 1, max: 12, step: .25, def: 5.5 },
+    { key: 'twist', label: 'Twist length', min: 16, max: 200, step: 2, def: 110 },
     { key: 'barbSize', label: 'Barb length', min: .4, max: 2, step: .05, def: 1 },
-    { key: 'barbSpacing', label: 'Barb spacing', min: 30, max: 300, step: 5, def: 95 },
+    { key: 'barbSpacing', label: 'Barb spacing', min: 30, max: 400, step: 5, def: 170 },
     { key: 'barbVariety', label: 'Barb variety', min: 0, max: 1, step: .05, def: .8 },
     { key: 'wireSoft', label: 'Out of focus', min: 0, max: 1, step: .05, def: .5 },
     { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 2 },
@@ -63,22 +64,32 @@
      stripSVG: rope + a few barbs combined into one seamless tile, for use outside the effect. */
   const hex2 = (a, b, t) => { const A = hexv(a), B = hexv(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
   const fx = n => (+n).toFixed(2);
-  const ROPE_T = 288, ROPE_H = 24;
+  const ROPE_H = 26;
+  const ropeLen = per => Math.max(16, Math.round(per / 2) * 2) * 3;   // tile = three full twists, so it repeats seamlessly
   function wireColors(col) { return { dark: hex2(col, '#000000', .2), mid: hex2(col, '#4a4f56', .28), hi: hex2(col, '#8f969f', .45) }; }
-  function ropeBody(col, id, x0) {
-    const C = wireColors(col), cy = ROPE_H / 2, T = ROPE_T; let o = '';
-    o += '<rect x="' + (x0 - 2) + '" y="' + fx(cy - 4.6) + '" width="' + (T + 4) + '" height="9.2" fill="' + C.dark + '"/>';
-    for (let x = -24, i = 0; x <= T + 24; x += 12, i++) {
-      const xm = ((x % T) + T) % T, shade = .08 + .22 * hash(xm * .37 + 1), yo = i % 2 ? .6 : -.6;
-      o += '<g transform="translate(' + (x0 + x + 6) + ' ' + fx(cy + yo) + ') rotate(-34)"><rect x="-11.5" y="-3.7" width="23" height="7.4" rx="3.7" fill="url(#' + id + 'g)" stroke="' + C.dark + '" stroke-width=".8"/>' +
-        '<rect x="-11.5" y="-3.7" width="23" height="7.4" rx="3.7" fill="#000" opacity="' + fx(shade) + '"/></g>';
+  // Two round wires twisted loosely around each other. Each half twist, the wire in front swaps.
+  function ropeBody(col, id, x0, per, cy) {
+    const C = wireColors(col), T = ropeLen(per), P2 = T / 3, half = P2 / 2, r = 2.1, amp = Math.min(3.4, 1.3 + P2 * .025);
+    const yAt = (x, sg) => { const j = Math.floor(x / half), aj = amp * (.88 + .24 * hash((((j % 6) + 6) % 6) * 1.7 + 3)); return cy + sg * aj * Math.sin(2 * Math.PI * x / P2); };
+    const seg = (j, sg) => { let d = ''; const xa = j * half, xb = xa + half;
+      for (let x = xa; x <= xb + .01; x += 1.5) d += (x === xa ? 'M' : 'L') + fx(x0 + x) + ' ' + fx(yAt(Math.min(x, xb), sg));
+      return d; };
+    let back = '', front = '';
+    for (let j = -2; j < 6 + 2; j++) {                     // a little past both tile edges, so the ends meet cleanly
+      const aFront = ((j % 2) + 2) % 2 === 0;
+      const pa = seg(j, 1), pb = seg(j, -1);
+      if (aFront) { back += pb; front += pa; } else { back += pa; front += pb; }
     }
-    return o;
+    // per wire: a dark outline (separates it from the wire behind), the shaded body, a thin highlight along the top
+    const wire = d => '<path d="' + d + '" fill="none" stroke="' + C.dark + '" stroke-width="' + fx(r * 2 + 1.3) + '" stroke-linecap="round"/>' +
+      '<path d="' + d + '" fill="none" stroke="url(#' + id + 'g)" stroke-width="' + fx(r * 2) + '" stroke-linecap="round"/>' +
+      '<path d="' + d + '" fill="none" stroke="' + C.hi + '" stroke-opacity=".35" stroke-width="' + fx(r * .55) + '" stroke-linecap="round" transform="translate(0 ' + fx(-r * .45) + ')"/>';
+    return wire(back) + wire(front);
   }
-  function ropeDefs(col, id, soft, w, h) {
+  function ropeDefs(col, id, soft, w, h, cy) {
     const C = wireColors(col);
-    return '<linearGradient id="' + id + 'g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + C.hi + '"/><stop offset=".42" stop-color="' + C.mid + '"/><stop offset="1" stop-color="' + C.dark + '"/></linearGradient>' +
-      // rust blotches + bright pitting, from noise that stitches at the tile edges; then the focus blur
+    return '<linearGradient id="' + id + 'g" gradientUnits="userSpaceOnUse" x1="0" y1="' + fx(cy - 7) + '" x2="0" y2="' + fx(cy + 7) + '"><stop offset="0" stop-color="' + C.hi + '"/><stop offset=".45" stop-color="' + C.mid + '"/><stop offset="1" stop-color="' + C.dark + '"/></linearGradient>' +
+      // rust blotches + dark pitting, from noise that stitches at the tile edges; then the focus blur
       '<filter id="' + id + 't" filterUnits="userSpaceOnUse" x="0" y="0" width="' + w + '" height="' + h + '" color-interpolation-filters="sRGB">' +
       '<feTurbulence type="fractalNoise" baseFrequency=".18 .6" numOctaves="3" seed="7" stitchTiles="stitch" result="n"/>' +
       '<feColorMatrix in="n" type="matrix" values="0 0 0 0 .19  0 0 0 0 .12  0 0 0 0 .07  0 0 0 -4.5 2.05" result="ru"/>' +
@@ -89,9 +100,9 @@
       '<feMerge result="tx"><feMergeNode in="r1"/><feMergeNode in="sp2"/></feMerge>' +
       (soft > 0 ? '<feGaussianBlur in="tx" stdDeviation="' + fx(soft * 1.1) + '"/>' : '') + '</filter>';
   }
-  function ropeSVG(col, soft) {
-    const id = 'r';
-    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + ROPE_T + '" height="' + ROPE_H + '" viewBox="0 0 ' + ROPE_T + ' ' + ROPE_H + '"><defs>' + ropeDefs(col, id, soft, ROPE_T, ROPE_H) + '</defs><g filter="url(#' + id + 't)">' + ropeBody(col, id, 0) + '</g></svg>', w: ROPE_T, h: ROPE_H };
+  function ropeSVG(col, soft, per) {
+    const id = 'r', T = ropeLen(per), cy = ROPE_H / 2;
+    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + T + '" height="' + ROPE_H + '" viewBox="0 0 ' + T + ' ' + ROPE_H + '"><defs>' + ropeDefs(col, id, soft, T, ROPE_H, cy) + '</defs><g filter="url(#' + id + 't)">' + ropeBody(col, id, 0, per, cy) + '</g></svg>', w: T, h: ROPE_H };
   }
   function barbGeom(len, seed, variety) {
     let st = (seed * 2654435761) >>> 0 || 1; const rnd = () => { st = (Math.imul(st ^ (st >>> 15), 2246822507) + 0x9e3779b9) >>> 0; return st / 4294967296; };
@@ -110,7 +121,7 @@
       const bx = cx + p.sgn * 2, by = cy + 3.2 * Math.cos(p.th), tx = bx + p.d[0] * p.L, ty = by + p.d[1] * p.L;
       const sl = Math.hypot(tx - bx, ty - by);
       if (sl < 2.5) { o += '<circle cx="' + fx(bx) + '" cy="' + fx(by) + '" r="2.2" fill="' + C.mid + '" stroke="' + C.dark + '" stroke-width=".6"/>'; continue; }
-      const ux = (tx - bx) / sl, uy = (ty - by) / sl, nx = -uy * 2, ny = ux * 2, mx = bx + (tx - bx) * .55 - uy * p.bend * sl, my = by + (ty - by) * .55 + ux * p.bend * sl;
+      const ux = (tx - bx) / sl, uy = (ty - by) / sl, nx = -uy * 2.3, ny = ux * 2.3, mx = bx + (tx - bx) * .55 - uy * p.bend * sl, my = by + (ty - by) * .55 + ux * p.bend * sl;
       const cut = Math.min(3, sl * .25);
       o += '<path d="M' + fx(bx + nx) + ' ' + fx(by + ny) + ' Q' + fx(mx + nx * .6) + ' ' + fx(my + ny * .6) + ' ' + fx(tx) + ' ' + fx(ty) +
         ' L' + fx(tx - ux * cut - nx * .5) + ' ' + fx(ty - uy * cut - ny * .5) + ' Q' + fx(mx - nx * .6) + ' ' + fx(my - ny * .6) + ' ' + fx(bx - nx) + ' ' + fx(by - ny) +
@@ -118,7 +129,7 @@
     }
     if (layer === 'front') for (let j = 0; j < g.wraps; j++) {
       const x = cx - (g.wraps - 1) * 2 + j * 4;
-      o += '<ellipse cx="' + fx(x) + '" cy="' + fx(cy) + '" rx="2.4" ry="6.8" transform="rotate(' + fx(g.tiltC) + ' ' + fx(x) + ' ' + fx(cy) + ')" fill="url(#' + id + 'c)" stroke="' + C.dark + '" stroke-width=".7"/>';
+      o += '<ellipse cx="' + fx(x) + '" cy="' + fx(cy) + '" rx="2.5" ry="5.4" transform="rotate(' + fx(g.tiltC) + ' ' + fx(x) + ' ' + fx(cy) + ')" fill="url(#' + id + 'c)" stroke="' + C.dark + '" stroke-width=".7"/>';
     }
     return o;
   }
@@ -132,13 +143,14 @@
     const S = Math.ceil(2 * (len * 1.25 + 10)), c = S / 2, id = 'b', g = barbGeom(len, seed, variety);
     return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + S + '" height="' + S + '" viewBox="0 0 ' + S + ' ' + S + '"><defs>' + barbDefs(col, id, soft) + '</defs><g' + (soft > 0 ? ' filter="url(#' + id + 'b)"' : '') + '>' + barbBody(col, id, g, c, c, layer) + '</g></svg>', w: S, h: S };
   }
-  function stripSVG(col, len, variety) {                   // standalone: rope + barbs in one seamless tile
-    const T = ROPE_T, pad = Math.ceil(len * 1.25 + 10), Hh = Math.max(ROPE_H, 2 * pad), cy = Hh / 2, xs = [40, 135, 225];
+  function stripSVG(col, len, variety, per) {             // standalone: rope + barbs in one seamless tile
+    per = per || 110;
+    const T = ropeLen(per), pad = Math.ceil(len * 1.25 + 10), Hh = Math.max(ROPE_H, 2 * pad), cy = Hh / 2, xs = [T * .14, T * .47, T * .78];
     let o = '<svg xmlns="http://www.w3.org/2000/svg" width="' + T + '" height="' + Hh + '" viewBox="0 0 ' + T + ' ' + Hh + '" role="img" aria-label="Barbed wire"><defs>' +
-      ropeDefs(col, 'r', 0, T, Hh) + barbDefs(col, 'b', 0) + '</defs>';
+      ropeDefs(col, 'r', 0, T, Hh, cy) + barbDefs(col, 'b', 0) + '</defs>';
     const geoms = xs.map((x, i) => barbGeom(len, 11 + i * 7, variety));
     xs.forEach((x, i) => { o += barbBody(col, 'b', geoms[i], x, cy, 'back'); });
-    o += '<g filter="url(#rt)" transform="translate(0 ' + (cy - ROPE_H / 2) + ')">' + ropeBody(col, 'r', 0) + '</g>';
+    o += '<g filter="url(#rt)">' + ropeBody(col, 'r', 0, per, cy) + '</g>';
     xs.forEach((x, i) => { o += barbBody(col, 'b', geoms[i], x, cy, 'front'); });
     return o + '</svg>';
   }
@@ -370,10 +382,10 @@
       img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(info.svg);
     });
     function ensureWireTex() {
-      const key = [P.wire, P.barbSize, P.wireSoft, P.barbVariety].join('|');
+      const key = [P.wire, P.barbSize, P.wireSoft, P.barbVariety, P.twist].join('|');
       if (key === wireKey || key === wireLoading) return;
       wireLoading = key;
-      const len = 30 * P.barbSize, rope = ropeSVG(P.wire, P.wireSoft), jobs = [raster(rope, 3)];
+      const len = 26 * P.barbSize, rope = ropeSVG(P.wire, P.wireSoft, P.twist), jobs = [raster(rope, 3)];
       for (let v = 0; v < NV; v++) for (const layer of ['back', 'front']) jobs.push(raster(barbSVG(P.wire, len, P.wireSoft, v + 1, P.barbVariety, layer), 3));
       Promise.all(jobs).then(r => {
         if (wireLoading !== key) return;

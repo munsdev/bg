@@ -8,5 +8,10 @@
     "name": "Night map",
     "path": "/nightmap/",
     "blurb": "A dark map of the US, Europe, or both. Borders and states light up under the pointer, with clouds drifting over."
+  },
+  {
+    "name": "Night camp",
+    "path": "/nightcamp/",
+    "blurb": "A blurred night yard: barbed wire swaying up front, a flickering lamp, a dim flag, and candles that light in the windows."
   }
 ]

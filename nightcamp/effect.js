@@ -35,6 +35,7 @@
     { key: 'wireSoft', label: 'Out of focus', min: 0, max: 1, step: .05, def: .5 },
     { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 2 },
     { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -1.5 },
+    { key: 'wireSway', label: 'Wire sways in wind', min: 0, max: 1, step: .05, def: 0 },
     { group: 'Wind', key: 'wind', label: 'Wind', min: 0, max: 2, step: .05, def: .6 },
     { key: 'gustPointer', label: 'Touch strength', min: 0, max: 1, step: .05, def: .5 },
     { group: 'Atmosphere', key: 'fog', label: 'Fog', min: 0, max: 1, step: .05, def: .65 },
@@ -370,15 +371,18 @@
 
     /* ---------- foreground barbed wire (sharp) ---------- */
     // Each strand has its own tension and its own response to the wind, so they never move in step.
+    // Each is also a taut wire (a 1D wave simulation, ends fixed just off-screen): a touch sends a wave along the whole strand.
+    const SN = 64, EXT = 60;
     const strand = k => STR[k] || (STR[k] = { ph: hash(k * 4.1 + 1) * 6.28, f1: .7 + hash(k * 2.3 + 5) * .7, f2: .7 + hash(k * 3.7 + 2) * .8,
       s1: .75 + hash(k * 5.9 + 3) * .6, s2: .7 + hash(k * 1.3 + 7) * .7, gs: .6 + hash(k * 8.1 + 4) * .9, gp: hash(k * 6.7 + 9) * 6.28,
-      amp: .7 + hash(k * 9.3 + 6) * .6, plucks: [], lastY: null });
+      amp: .7 + hash(k * 9.3 + 6) * .6, ten: .85 + hash(k * 7.3 + 8) * .3, y: new Float32Array(SN), v: new Float32Array(SN) });
+    function stringAt(q, x) { const f = (x + EXT) / (W + 2 * EXT) * (SN - 1), i = Math.max(0, Math.min(SN - 2, Math.floor(f))), t2 = Math.max(0, Math.min(1, f - i)); return q.y[i] + (q.y[i + 1] - q.y[i]) * t2; }
     function sway(x, k) {
-      const q = strand(k), A = 4 * sc * P.wind * q.amp, gust = 1 + .55 * Math.sin(tw * .37 * q.gs + q.gp) * Math.sin(tw * .13 * q.gs + q.ph);
-      let y = A * gust * (Math.sin(x * .0036 * q.f1 + tw * 1.15 * q.s1 + q.ph) * .6 + Math.sin(x * .0095 * q.f2 - tw * 1.9 * q.s2 + q.ph * 1.7) * .4);
-      for (const pl of q.plucks) {                            // a touch: a local bounce that dies away
-        const age = (performance.now() - pl.t0) / 1000, dx = (x - pl.x) / (W * .14);
-        y += pl.a * Math.exp(-dx * dx) * Math.sin(age * 2 * Math.PI * 3.1) * Math.exp(-age / .45);
+      const q = strand(k);
+      let y = stringAt(q, x);
+      if (P.wireSway > 0) {
+        const A = 4 * sc * P.wireSway * 2 * q.amp, gust = 1 + .55 * Math.sin(tw * .37 * q.gs + q.gp) * Math.sin(tw * .13 * q.gs + q.ph);
+        y += A * gust * (Math.sin(x * .0036 * q.f1 + tw * 1.15 * q.s1 + q.ph) * .6 + Math.sin(x * .0095 * q.f2 - tw * 1.9 * q.s2 + q.ph * 1.7) * .4);
       }
       return y;
     }
@@ -386,21 +390,35 @@
       const S = P.strands | 0, gapPx = H * P.wireGap, tilt = Math.tan(P.wireTilt * RAD), by = H * P.wireY + (k - (S - 1) / 2) * gapPx, xn = 2 * x / W - 1;
       return by + tilt * (x - W / 2) * (1 + k * .15) + P.wireSag * sc * (1 - xn * xn) + (noise(x * .0032 + k * 9.1) - .5) * 22 * sc + sway(x, k);
     }
-    // Only the strand the pointer actually crosses gets plucked, in the direction the pointer was moving.
-    function touchWire(now) {
-      if (!P.wireOn || P.gustPointer <= 0 || !active) return;
-      const S = P.strands | 0, hit = Math.max(6, P.wireWidth * Math.max(.95, u / 1000) * .9);
+    function simWire(dt) {
+      const S = P.strands | 0, L = W + 2 * EXT, dx = L / (SN - 1), lim = 45 * sc;
       for (let k = 0; k < S; k++) {
-        const q = strand(k), y = strandY(k, m.x), side = Math.sign(m.y - y), prev = q.lastY;
-        q.lastY = { side, x: m.x, y: m.y };
-        q.plucks = q.plucks.filter(pl => now - pl.t0 < 2500);
-        if (!prev) continue;
-        const crossed = (prev.side !== side && Math.abs(prev.x - m.x) < W * .2) || Math.abs(m.y - y) < hit;
-        const moved = Math.hypot(m.x - prev.x, m.y - prev.y);
-        if (crossed && moved > .5 && (!q.plucks.length || now - q.plucks[q.plucks.length - 1].t0 > 220) && q.plucks.length < 4) {
-          const dir = Math.sign(m.y - prev.y) || 1;
-          q.plucks.push({ x: m.x, t0: now, a: dir * P.gustPointer * Math.min(1, .35 + moved / 25) * 7 * sc });
+        const q = strand(k), c = 2 * L * .85 * q.ten, n = Math.max(1, Math.ceil(dt * c / dx / .7)), h = dt / n, kk = (c * c) / (dx * dx), damp = Math.exp(-h / .75);
+        for (let s2 = 0; s2 < n; s2++) {
+          for (let i = 1; i < SN - 1; i++) q.v[i] = (q.v[i] + h * kk * (q.y[i + 1] - 2 * q.y[i] + q.y[i - 1])) * damp;
+          for (let i = 1; i < SN - 1; i++) q.y[i] = Math.max(-lim, Math.min(lim, q.y[i] + h * q.v[i]));
         }
+      }
+    }
+    function hitStrand(k, x, strength, dir) {                // a push on the strand at x: velocity spread over a few nodes
+      const q = strand(k), f = (x + EXT) / (W + 2 * EXT) * (SN - 1), imp = dir * P.gustPointer * strength * sc;
+      for (let i = 1; i < SN - 1; i++) { const d = (i - f) / 2.2; q.v[i] += imp * Math.exp(-d * d); }
+    }
+    // Pointer segments (per finger) that cross a strand, or a tap close to one, push only that strand.
+    const ptrs = new Map();
+    function touchSeg(id, x, y, tap, coarseHit) {
+      if (!P.wireOn || P.gustPointer <= 0) return;
+      const prev = ptrs.get(id); ptrs.set(id, { x, y });
+      const S = P.strands | 0, near = coarseHit ? 26 : Math.max(8, P.wireWidth * Math.max(.95, u / 1000) * 1.2);
+      for (let k = 0; k < S; k++) {
+        const yc = strandY(k, x);
+        if (tap || !prev) { if (tap && Math.abs(y - yc) < near) hitStrand(k, x, 520, y < yc ? 1 : -1); continue; }
+        const yp = strandY(k, prev.x), s0 = prev.y - yp, s1 = y - yc, moved = Math.hypot(x - prev.x, y - prev.y);
+        if (moved < .5 || Math.abs(x - prev.x) > W * .3) continue;
+        if ((s0 < 0) !== (s1 < 0)) {                          // crossed: push at the crossing point, in the direction of travel
+          const t2 = s0 / (s0 - s1), cx = prev.x + (x - prev.x) * t2;
+          hitStrand(k, cx, Math.min(1100, 320 + moved * 22), Math.sign(y - prev.y) || 1);
+        } else if (Math.abs(s1) < near * .6) hitStrand(k, x, Math.min(500, 120 + moved * 10), Math.sign(y - prev.y) || 1);
       }
     }
     // Rasterise the rope tile and the barb variants once per wire color / barb length / focus / variety.
@@ -465,7 +483,7 @@
           while (seg < pts.length - 1) { const d = Math.hypot(pts[seg + 1][0] - pts[seg][0], pts[seg + 1][1] - pts[seg][1]); if (acc + d >= s0) break; acc += d; seg++; }
           if (seg >= pts.length - 1) break;
           const A = pts[seg], B = pts[seg + 1], d = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, t = (s0 - acc) / d;
-          list.push({ x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t, a: Math.atan2(B[1] - A[1], B[0] - A[0]) + Math.sin(tw * 1.4 * strand(k).s1 + j * 1.7 + strand(k).ph) * .05 * Math.min(1, P.wind),
+          list.push({ x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t, a: Math.atan2(B[1] - A[1], B[0] - A[0]) + Math.sin(tw * 1.4 * strand(k).s1 + j * 1.7 + strand(k).ph) * .05 * Math.min(1, P.wireSway * 2),
             v: Math.floor(hash(k * 29 + j * 7.3) * NV) % NV, f: hash(k * 13 + j * 3.1) < .5 ? -1 : 1 });
           j++; s0 += spacing * (1 + (hash(k * 17 + j * 1.9) - .5) * .5 * P.barbVariety);
         }
@@ -490,7 +508,7 @@
     function step(now, dt) {
       clock += reduce ? 0 : dt; tw += reduce ? 0 : dt * (.25 + P.wind * .9);
       raw *= Math.exp(-dt / .45); energy += (raw - energy) * (1 - Math.exp(-dt / .5)); lx += (m.x - lx) * (1 - Math.exp(-dt / .25));
-      touchWire(now);
+      simWire(Math.min(dt, .033));
       const idle = (P.autopilot || coarse) && !reduce && now - lastMove > 2500;
       if (idle && now > idleNext) {
         const near = wins.filter(w => w.z < 45 && w.cx > 0 && w.cx < W && w.cy > 0 && w.cy < H);
@@ -512,9 +530,12 @@
       const dt = Math.min(.05, (now - last) / 1000); last = now; step(now, dt); draw(now); raf = requestAnimationFrame(loop);
     }
     function start() { if (!raf && visible && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(loop); } }
-    function onMove(e) { const r = el.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; raw = Math.min(1, raw + Math.hypot(x - m.x, y - m.y) / 160); m.x = x; m.y = y; lastMove = performance.now(); active = true; }
+    function onMove(e) { const r = el.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; raw = Math.min(1, raw + Math.hypot(x - m.x, y - m.y) / 160); m.x = x; m.y = y; lastMove = performance.now(); active = true; touchSeg(e.pointerId, x, y, false, e.pointerType !== 'mouse'); }
+    function onDown(e) { const r = el.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; ptrs.delete(e.pointerId); touchSeg(e.pointerId, x, y, true, e.pointerType !== 'mouse'); }
+    function onUp(e) { if (e.pointerType !== 'mouse') ptrs.delete(e.pointerId); }
     function onOut(e) { if (!e.relatedTarget) { active = false; } }
     addEventListener('pointermove', onMove, { passive: true });
+    addEventListener('pointerdown', onDown, { passive: true }); addEventListener('pointerup', onUp, { passive: true }); addEventListener('pointercancel', onUp, { passive: true });
     document.addEventListener('mouseout', onOut);
     document.addEventListener('visibilitychange', start);
     const ro = new ResizeObserver(resize); ro.observe(el);
@@ -531,7 +552,7 @@
       },
       destroy() {
         cancelAnimationFrame(raf); raf = 0; ro.disconnect(); io.disconnect();
-        removeEventListener('pointermove', onMove); document.removeEventListener('mouseout', onOut); document.removeEventListener('visibilitychange', start);
+        removeEventListener('pointermove', onMove); removeEventListener('pointerdown', onDown); removeEventListener('pointerup', onUp); removeEventListener('pointercancel', onUp); document.removeEventListener('mouseout', onOut); document.removeEventListener('visibilitychange', start);
         cv.remove();
       }
     };

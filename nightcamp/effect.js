@@ -36,7 +36,7 @@
     { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 2 },
     { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -1.5 },
     { group: 'Wind', key: 'wind', label: 'Wind', min: 0, max: 2, step: .05, def: .6 },
-    { key: 'gustPointer', label: 'Pointer stirs wire', min: 0, max: 1, step: .05, def: .5 },
+    { key: 'gustPointer', label: 'Touch strength', min: 0, max: 1, step: .05, def: .5 },
     { group: 'Atmosphere', key: 'fog', label: 'Fog', min: 0, max: 1, step: .05, def: .65 },
     { key: 'clouds', label: 'Sky clouds', min: 0, max: 1, step: .05, def: .4 },
     { key: 'grain', label: 'Film grain', min: 0, max: 1, step: .05, def: .5 },
@@ -202,6 +202,7 @@
     let W = 1, H = 1, dpr = 1, s = .3, u = 1, sc = 1, f = 1, vx = 0, vy = 0, raf = 0, last = 0, visible = true;
     let blocks = [], wins = [], posts = [], lamps = [], trees = [];
     const m = { x: -1e4, y: -1e4 }; let active = false, lastMove = -1e9, energy = 0, raw = 0, lx = 0, ly = 0;
+    const STR = [];
     let t = 0, tw = 0, clock = 0, idleNext = 0, lampEv = { until: 0, next: 800, seed: 0 };
     let wireTex = null, wireInfo = null, barbSpr = null, wireKey = '', wireLoading = '';
     const NV = 8;
@@ -368,11 +369,39 @@
     }
 
     /* ---------- foreground barbed wire (sharp) ---------- */
-    function sway(x, s, ph) {
-      const A = 4 * sc * P.wind, gust = 1 + .5 * Math.sin(tw * .37 + ph);
-      let y = A * gust * (Math.sin(x * .0036 + tw * 1.15 + ph) * .6 + Math.sin(x * .0095 - tw * 1.9 + ph * 1.7) * .4);
-      const dx = (x - lx) / (W * .2); y += P.gustPointer * energy * Math.exp(-dx * dx) * Math.sin(tw * 6.5 - x * .02 + ph) * 14 * sc;
+    // Each strand has its own tension and its own response to the wind, so they never move in step.
+    const strand = k => STR[k] || (STR[k] = { ph: hash(k * 4.1 + 1) * 6.28, f1: .7 + hash(k * 2.3 + 5) * .7, f2: .7 + hash(k * 3.7 + 2) * .8,
+      s1: .75 + hash(k * 5.9 + 3) * .6, s2: .7 + hash(k * 1.3 + 7) * .7, gs: .6 + hash(k * 8.1 + 4) * .9, gp: hash(k * 6.7 + 9) * 6.28,
+      amp: .7 + hash(k * 9.3 + 6) * .6, plucks: [], lastY: null });
+    function sway(x, k) {
+      const q = strand(k), A = 4 * sc * P.wind * q.amp, gust = 1 + .55 * Math.sin(tw * .37 * q.gs + q.gp) * Math.sin(tw * .13 * q.gs + q.ph);
+      let y = A * gust * (Math.sin(x * .0036 * q.f1 + tw * 1.15 * q.s1 + q.ph) * .6 + Math.sin(x * .0095 * q.f2 - tw * 1.9 * q.s2 + q.ph * 1.7) * .4);
+      for (const pl of q.plucks) {                            // a touch: a local bounce that dies away
+        const age = (performance.now() - pl.t0) / 1000, dx = (x - pl.x) / (W * .14);
+        y += pl.a * Math.exp(-dx * dx) * Math.sin(age * 2 * Math.PI * 3.1) * Math.exp(-age / .45);
+      }
       return y;
+    }
+    function strandY(k, x) {
+      const S = P.strands | 0, gapPx = H * P.wireGap, tilt = Math.tan(P.wireTilt * RAD), by = H * P.wireY + (k - (S - 1) / 2) * gapPx, xn = 2 * x / W - 1;
+      return by + tilt * (x - W / 2) * (1 + k * .15) + P.wireSag * sc * (1 - xn * xn) + (noise(x * .0032 + k * 9.1) - .5) * 22 * sc + sway(x, k);
+    }
+    // Only the strand the pointer actually crosses gets plucked, in the direction the pointer was moving.
+    function touchWire(now) {
+      if (!P.wireOn || P.gustPointer <= 0 || !active) return;
+      const S = P.strands | 0, hit = Math.max(6, P.wireWidth * Math.max(.95, u / 1000) * .9);
+      for (let k = 0; k < S; k++) {
+        const q = strand(k), y = strandY(k, m.x), side = Math.sign(m.y - y), prev = q.lastY;
+        q.lastY = { side, x: m.x, y: m.y };
+        q.plucks = q.plucks.filter(pl => now - pl.t0 < 2500);
+        if (!prev) continue;
+        const crossed = (prev.side !== side && Math.abs(prev.x - m.x) < W * .2) || Math.abs(m.y - y) < hit;
+        const moved = Math.hypot(m.x - prev.x, m.y - prev.y);
+        if (crossed && moved > .5 && (!q.plucks.length || now - q.plucks[q.plucks.length - 1].t0 > 220) && q.plucks.length < 4) {
+          const dir = Math.sign(m.y - prev.y) || 1;
+          q.plucks.push({ x: m.x, t0: now, a: dir * P.gustPointer * Math.min(1, .35 + moved / 25) * 7 * sc });
+        }
+      }
     }
     // Rasterise the rope tile and the barb variants once per wire color / barb length / focus / variety.
     const raster = (info, R) => new Promise(res => {
@@ -427,11 +456,8 @@
       const tilt = Math.tan(P.wireTilt * RAD), ts = wpx * .13, spacing = Math.max(10, P.barbSpacing * wsc);
       c.lineCap = 'round'; c.lineJoin = 'round';
       for (let k = 0; k < S; k++) {
-        const by = H * P.wireY + (k - (S - 1) / 2) * gapPx, ph = k * 1.7 + .6, sag = P.wireSag * sc, pts = [];
-        for (let x = x0; x <= W + 12; x += 5) {
-          const xn = 2 * x / W - 1;
-          pts.push([x, by + tilt * (x - W / 2) * (1 + k * .15) + sag * (1 - xn * xn) + (noise(x * .0032 + k * 9.1) - .5) * 22 * sc + sway(x, k, ph)]);
-        }
+        const pts = [];
+        for (let x = x0; x <= W + 12; x += 5) pts.push([x, strandY(k, x)]);
         if (!wireTex || !barbSpr) continue;
         // barb positions along the strand: set spacing with a little irregularity, each a random variant, some mirrored
         const list = []; let s0 = hash(k * 3.3) * spacing, seg = 0, acc = 0, j = 0;
@@ -439,7 +465,7 @@
           while (seg < pts.length - 1) { const d = Math.hypot(pts[seg + 1][0] - pts[seg][0], pts[seg + 1][1] - pts[seg][1]); if (acc + d >= s0) break; acc += d; seg++; }
           if (seg >= pts.length - 1) break;
           const A = pts[seg], B = pts[seg + 1], d = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, t = (s0 - acc) / d;
-          list.push({ x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t, a: Math.atan2(B[1] - A[1], B[0] - A[0]) + Math.sin(tw * 1.4 + j + k) * .05,
+          list.push({ x: A[0] + (B[0] - A[0]) * t, y: A[1] + (B[1] - A[1]) * t, a: Math.atan2(B[1] - A[1], B[0] - A[0]) + Math.sin(tw * 1.4 * strand(k).s1 + j * 1.7 + strand(k).ph) * .05 * Math.min(1, P.wind),
             v: Math.floor(hash(k * 29 + j * 7.3) * NV) % NV, f: hash(k * 13 + j * 3.1) < .5 ? -1 : 1 });
           j++; s0 += spacing * (1 + (hash(k * 17 + j * 1.9) - .5) * .5 * P.barbVariety);
         }
@@ -464,6 +490,7 @@
     function step(now, dt) {
       clock += reduce ? 0 : dt; tw += reduce ? 0 : dt * (.25 + P.wind * .9);
       raw *= Math.exp(-dt / .45); energy += (raw - energy) * (1 - Math.exp(-dt / .5)); lx += (m.x - lx) * (1 - Math.exp(-dt / .25));
+      touchWire(now);
       const idle = (P.autopilot || coarse) && !reduce && now - lastMove > 2500;
       if (idle && now > idleNext) {
         const near = wins.filter(w => w.z < 45 && w.cx > 0 && w.cx < W && w.cy > 0 && w.cy < H);

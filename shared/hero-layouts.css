@@ -1,0 +1,43 @@
+/* Standard hero layouts. Used by the generator and included in standalone exports. */
+.hero{position:relative;min-height:100vh;overflow:hidden;display:flex;align-items:center;color:#fff;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.hero .bg{position:absolute;inset:0}
+.hero .inner{position:relative;z-index:1;width:100%;max-width:1400px;margin:0 auto;padding:clamp(88px,12vh,140px) clamp(16px,5vw,64px) clamp(48px,8vh,96px)}
+.hero .eyebrow{margin:0 0 18px;font:12px/1.2 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.16em;text-transform:uppercase;opacity:.65}
+.hero h1{margin:0;font-weight:900;line-height:.95;letter-spacing:-.02em;font-size:clamp(44px,9vw,148px);text-transform:uppercase}
+.hero .lead{max-width:36ch;margin:clamp(16px,3vh,28px) 0 0;font-size:clamp(16px,1.7vw,24px);line-height:1.5;opacity:.85}
+.hero .more{display:none}
+.hero .btns{display:flex;flex-wrap:wrap;gap:12px;margin-top:clamp(20px,4vh,36px)}
+.hero .btn{display:inline-block;padding:12px 18px;border:2px solid #fff;border-radius:8px;color:#fff;text-decoration:none;font:700 12px/1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.12em;text-transform:uppercase}
+.hero .btn.fill{background:#fff;color:#0e1420}
+.hero .media{display:none;background:rgba(255,255,255,.14);border:1px dashed rgba(255,255,255,.4);border-radius:12px;min-height:260px;align-items:center;justify-content:center;font:12px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.14em;text-transform:uppercase;opacity:.8}
+
+/* one big header */
+.hero[data-layout="big"] .lead,.hero[data-layout="big"] .btns{display:none}
+.hero[data-layout="big"] h1{font-size:clamp(56px,15vw,260px)}
+
+/* centered */
+.hero[data-layout="center"] .inner{text-align:center}
+.hero[data-layout="center"] .lead{margin-left:auto;margin-right:auto}
+.hero[data-layout="center"] .btns{justify-content:center}
+
+/* left aligned: default styles */
+
+/* left text, image right */
+.hero[data-layout="split"] .inner{display:grid;grid-template-columns:1.1fr .9fr;gap:clamp(24px,5vw,72px);align-items:center}
+.hero[data-layout="split"] h1{font-size:clamp(40px,6.5vw,110px)}
+.hero[data-layout="split"] .media{display:flex;aspect-ratio:4/3}
+
+/* headline with paragraphs */
+.hero[data-layout="text"] .copy{display:grid;grid-template-columns:1fr 1fr;gap:clamp(24px,5vw,72px);align-items:start}
+.hero[data-layout="text"] h1{grid-column:1;font-size:clamp(40px,6vw,100px)}
+.hero[data-layout="text"] .eyebrow{grid-column:1 / -1;margin-bottom:0}
+.hero[data-layout="text"] .lead{grid-column:2;grid-row:2;margin:0;max-width:none}
+.hero[data-layout="text"] .more{display:block;grid-column:2;grid-row:2;margin-top:6em;max-width:none}
+.hero[data-layout="text"] .more p{margin:0 0 1em;line-height:1.55;opacity:.8}
+.hero[data-layout="text"] .btns{grid-column:1 / -1}
+
+@media (max-width:760px){
+  .hero[data-layout="split"] .inner{grid-template-columns:1fr}
+  .hero[data-layout="text"] .copy{grid-template-columns:1fr}
+  .hero[data-layout="text"] h1,.hero[data-layout="text"] .lead,.hero[data-layout="text"] .more{grid-column:1;grid-row:auto;margin-top:16px}
+}

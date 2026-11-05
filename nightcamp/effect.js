@@ -20,15 +20,15 @@
     { key: 'lampLevel', label: 'Lamp brightness', min: 0, max: 1.5, step: .05, def: .6 },
     { key: 'flicker', label: 'Flicker', min: 0, max: 1, step: .05, def: .6 },
     { group: 'Flag', key: 'flag', label: 'Flag on', type: 'toggle', def: true },
-    { key: 'flagSize', label: 'Flag size', min: .5, max: 2, step: .05, def: .85 },
-    { key: 'flagX', label: 'Flag position', min: -.35, max: .35, step: .01, def: -.01 },
-    { key: 'flagLight', label: 'Flag light', min: 0, max: 1, step: .05, def: .5 },
+    { key: 'flagSize', label: 'Flag size', min: .3, max: 2, step: .05, def: .7 },
+    { key: 'flagX', label: 'Flag position', min: -.35, max: .35, step: .01, def: -.035 },
+    { key: 'flagLight', label: 'Flag light', min: 0, max: 1, step: .05, def: 0 },
     { group: 'Barbed wire', key: 'wireOn', label: 'Wire on', type: 'toggle', def: true },
     { key: 'strands', label: 'Strands', min: 1, max: 5, step: 1, def: 3 },
     { key: 'wireY', label: 'Height', min: .35, max: .95, step: .01, def: .7 },
-    { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 26 },
+    { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 3 },
     { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -2.5 },
-    { key: 'wireWidth', label: 'Thickness', min: .6, max: 3, step: .05, def: 1.7 },
+    { key: 'wireWidth', label: 'Thickness', min: .6, max: 4, step: .05, def: 2.8 },
     { group: 'Wind', key: 'wind', label: 'Wind', min: 0, max: 2, step: .05, def: .6 },
     { key: 'gustPointer', label: 'Pointer stirs wire', min: 0, max: 1, step: .05, def: .5 },
     { group: 'Atmosphere', key: 'fog', label: 'Fog', min: 0, max: 1, step: .05, def: .5 },
@@ -142,21 +142,30 @@
 
     /* ---------- scene (drawn small, then upscaled = blur) ---------- */
     function drawFlag(lampI) {
-      const size = u * .2 * P.flagSize, fh = size / 1.9, sh = fh / 13, h = u * .23 * P.flagSize, px = vx + W * P.flagX, by = vy + 3, topY = by - h;
-      const dim = Math.min(1, .28 + .55 * P.flagLight + .12 * lampI);
-      q.strokeStyle = mixc('#8a8f98', '#000000', 1 - dim); q.lineWidth = Math.max(1.5, u * .004);
+      const size = u * .2 * P.flagSize, fh = size / 1.9, sh = fh / 13, h = u * .2 * P.flagSize, px = vx + W * P.flagX, by = vy + 3, topY = by - h;
+      const dim = Math.min(1, .3 + .4 * P.flagLight + .05 * lampI), dk = 1 - dim;
+      q.strokeStyle = mixc('#5a5f68', '#000000', dk); q.lineWidth = Math.max(1.2, u * .003);
       q.beginPath(); q.moveTo(px, by); q.lineTo(px, topY - 3); q.stroke();
-      if (P.flagLight > 0) { const g = q.createRadialGradient(px + size / 2, topY + fh / 2, 0, px + size / 2, topY + fh / 2, size * 1.3); g.addColorStop(0, rgba('#cfd8ff', .16 * P.flagLight)); g.addColorStop(1, rgba('#cfd8ff', 0)); q.globalCompositeOperation = 'lighter'; q.fillStyle = g; q.fillRect(px - size, topY - size, size * 3.4, size * 3); q.globalCompositeOperation = 'source-over'; }
-      const n = 22, A = fh * .11 * (.5 + P.wind * .9), pts = [];
-      for (let i = 0; i <= n; i++) { const k = i / n, ph = k * 5.2 - tw * 3.1; pts.push([px + size * k + Math.sin(ph) * A * .25 * k, topY + A * k * Math.sin(ph), Math.cos(ph)]); }
-      const poly = (a, b) => { q.beginPath(); for (let i = 0; i <= n; i++) i ? q.lineTo(pts[i][0], pts[i][1] + a * sh) : q.moveTo(pts[i][0], pts[i][1] + a * sh); for (let i = n; i >= 0; i--) q.lineTo(pts[i][0], pts[i][1] + b * sh); q.closePath(); };
-      const red = mixc('#b22234', '#000000', 1 - dim), wh = mixc('#e8eaf0', '#000000', 1 - dim), bl = mixc('#3c3b6e', '#000000', 1 - dim);
-      for (let k = 0; k < 13; k++) { poly(k, k + 1); q.fillStyle = k % 2 ? wh : red; q.fill(); }
+      if (P.flagLight > 0) { const g = q.createRadialGradient(px + size / 2, topY + fh / 2, 0, px + size / 2, topY + fh / 2, size * 1.3); g.addColorStop(0, rgba('#cfd8ff', .14 * P.flagLight)); g.addColorStop(1, rgba('#cfd8ff', 0)); q.globalCompositeOperation = 'lighter'; q.fillStyle = g; q.fillRect(px - size, topY - size, size * 3.4, size * 3); q.globalCompositeOperation = 'source-over'; }
+      const n = 24, A = fh * .08 * (.4 + P.wind * .8), pts = [];
+      for (let i = 0; i <= n; i++) { const k = i / n, ph = k * 4.6 - tw * 2.4; pts.push([px + size * k * (1 - .06 * k) + Math.sin(ph) * A * .2 * k, topY + A * k * Math.sin(ph) + k * k * fh * .16, Math.cos(ph)]); }
+      // each stripe is torn to its own length, with a ragged end, and its loose end flutters on its own
+      const edge = (k, i, extra) => pts[i][1] + k * sh + extra;
+      const flutter = (k, i) => { const t = i / n; return t * t * Math.sin(tw * 2.7 + k * 1.9 + i * .35) * sh * (.5 + P.wind * .6); };
+      const gray = c => mixc(mixc(c, '#585858', .4), '#000000', dk);
+      const red = gray('#b22234'), wh = gray('#e8eaf0'), bl = gray('#3c3b6e');
+      for (let k = 0; k < 13; k++) {
+        const tear = k < 7 ? .08 * hash(k + 2) : .12 + .5 * hash(k * 3.7), ne = Math.max(Math.floor(n * .3), Math.floor(n * (1 - tear))), nb = Math.max(Math.floor(n * .25), ne - 1 - Math.floor(hash(k * 5.3) * 4));
+        q.beginPath();
+        for (let i = 0; i <= ne; i++) { const y = edge(k, i, flutter(k, i)); i ? q.lineTo(pts[i][0], y) : q.moveTo(pts[i][0], y); }
+        for (let i = nb; i >= 0; i--) q.lineTo(pts[i][0], edge(k + 1, i, flutter(k, i)) - (i > nb - 3 ? sh * .25 * hash(i + k) : 0));
+        q.closePath(); q.fillStyle = k % 2 ? wh : red; q.fill();
+      }
       const nc = Math.floor(n * .4); q.beginPath(); for (let i = 0; i <= nc; i++) i ? q.lineTo(pts[i][0], pts[i][1]) : q.moveTo(pts[i][0], pts[i][1]);
-      for (let i = nc; i >= 0; i--) q.lineTo(pts[i][0], pts[i][1] + 7 * sh); q.closePath(); q.fillStyle = bl; q.fill();
-      q.fillStyle = mixc('#ffffff', '#000000', 1 - dim);
-      for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) { const i = Math.round((.03 + c * .075) * n), y = pts[i][1] + (.9 + r * 1.6) * sh; q.fillRect(pts[i][0], y, Math.max(1, sh * .5), Math.max(1, sh * .5)); }
-      for (let i = 0; i < n; i++) { const sl = pts[i][2]; q.fillStyle = sl > 0 ? 'rgba(255,255,255,' + (.07 * sl) + ')' : 'rgba(0,0,0,' + (-.22 * sl) + ')'; q.beginPath(); q.moveTo(pts[i][0], pts[i][1]); q.lineTo(pts[i + 1][0], pts[i + 1][1]); q.lineTo(pts[i + 1][0], pts[i + 1][1] + 13 * sh); q.lineTo(pts[i][0], pts[i][1] + 13 * sh); q.closePath(); q.fill(); }
+      for (let i = nc - 2; i >= 0; i--) q.lineTo(pts[i][0], pts[i][1] + 7 * sh); q.closePath(); q.fillStyle = bl; q.fill();
+      q.fillStyle = mixc('#cfd2da', '#000000', dk);
+      for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) { if (hash(r * 7 + c * 3) < .2) continue; const i = Math.round((.03 + c * .07) * n), y = pts[i][1] + (.9 + r * 1.6) * sh; q.fillRect(pts[i][0], y, Math.max(1, sh * .45), Math.max(1, sh * .45)); }
+      for (let i = 0; i < n; i++) { const sl = pts[i][2]; q.fillStyle = sl > 0 ? 'rgba(255,255,255,' + (.04 * sl) + ')' : 'rgba(0,0,0,' + (-.3 * sl) + ')'; q.beginPath(); q.moveTo(pts[i][0], pts[i][1]); q.lineTo(pts[i + 1][0], pts[i + 1][1]); q.lineTo(pts[i + 1][0], pts[i + 1][1] + 9 * sh); q.lineTo(pts[i][0], pts[i][1] + 9 * sh); q.closePath(); q.fill(); }
     }
 
     function drawScene(now) {
@@ -217,11 +226,11 @@
         q.fillStyle = mixc('#0a0d12', fogc, fg * .8); q.fill();
         if (w.w > 7) { q.strokeStyle = 'rgba(0,0,0,.45)'; q.lineWidth = Math.max(.6, w.w * .06); q.stroke(); }
         if (w.lit > .01) {
-          const fl = Math.max(.25, Math.min(1.2, .72 + .2 * Math.sin(clock * 9.1 + w.ph) + .1 * Math.sin(clock * 17.3 + w.ph * 1.7) + .35 * (noise(clock * 11 + w.ph) - .5))), a = w.lit * fl * P.candleLevel;
+          const fl = Math.max(.25, Math.min(1.2, .72 + .2 * Math.sin(clock * 9.1 + w.ph) + .1 * Math.sin(clock * 17.3 + w.ph * 1.7) + .35 * (noise(clock * 11 + w.ph) - .5))), a = w.lit * fl * P.candleLevel * .36;
           q.save(); q.clip(); const r = Math.max(w.w, w.h) * .75;
-          g = q.createRadialGradient(w.cx, w.cy + w.h * .15, 0, w.cx, w.cy + w.h * .15, r); g.addColorStop(0, rgba('#ffe9b8', Math.min(1, a))); g.addColorStop(.35, rgba(P.candle, Math.min(1, a * .9))); g.addColorStop(1, rgba('#7a2a05', Math.min(1, a * .55)));
+          g = q.createRadialGradient(w.cx, w.cy + w.h * .15, 0, w.cx, w.cy + w.h * .15, r); g.addColorStop(0, rgba('#ffe0a8', Math.min(1, a * .9))); g.addColorStop(.35, rgba(P.candle, Math.min(1, a * .5))); g.addColorStop(1, rgba('#7a2a05', Math.min(1, a * .15)));
           q.fillStyle = g; q.fillRect(w.bb[0], w.bb[1], w.w, w.h); q.restore();
-          q.globalCompositeOperation = 'lighter'; const R = Math.max(w.w, w.h) * 3.2; g = q.createRadialGradient(w.cx, w.cy, 0, w.cx, w.cy, R); g.addColorStop(0, rgba(P.candle, Math.min(.5, a * .45))); g.addColorStop(1, rgba(P.candle, 0)); q.fillStyle = g; q.fillRect(w.cx - R, w.cy - R, R * 2, R * 2); q.globalCompositeOperation = 'source-over';
+          q.globalCompositeOperation = 'lighter'; const R = Math.max(w.w, w.h) * 1.8; g = q.createRadialGradient(w.cx, w.cy, 0, w.cx, w.cy, R); g.addColorStop(0, rgba(P.candle, Math.min(.2, a * .2))); g.addColorStop(1, rgba(P.candle, 0)); q.fillStyle = g; q.fillRect(w.cx - R, w.cy - R, R * 2, R * 2); q.globalCompositeOperation = 'source-over';
         }
       }
       // street lamps
@@ -260,7 +269,7 @@
       return y;
     }
     function drawWire(c, lampI) {
-      const S = P.strands | 0, gap = u * .06;
+      const S = P.strands | 0, gap = u * .07;
       const hl = lamps[0].head;
       for (let k = 0; k < S; k++) {
         const by = H * P.wireY + (k - (S - 1) / 2) * gap, tilt = Math.tan(P.wireTilt * RAD), sag = P.wireSag * sc * (1 + (k % 2) * .25), ph = k * 1.7 + .6, pts = [];
@@ -269,13 +278,13 @@
         c.lineCap = 'round'; c.lineJoin = 'round';
         for (let pass = 0; pass < 3; pass++) {
           if (pass === 0) { c.strokeStyle = P.wire; c.lineWidth = P.wireWidth * sc + .4; }
-          else if (pass === 1) { c.strokeStyle = 'rgba(160,175,200,.2)'; c.lineWidth = Math.max(.5, P.wireWidth * sc * .35); c.globalCompositeOperation = 'lighter'; c.translate(0, -.7); }
-          else { c.translate(0, .7); if (lampI <= .02) break; const g = c.createRadialGradient(hl[0], hl[1], 0, hl[0], hl[1], W * .55); g.addColorStop(0, rgba(P.lamp, .6 * lampI * P.lampLevel)); g.addColorStop(1, rgba(P.lamp, 0)); c.strokeStyle = g; c.lineWidth = Math.max(.5, P.wireWidth * sc * .45); c.globalCompositeOperation = 'lighter'; }
+          else if (pass === 1) { c.strokeStyle = 'rgba(165,180,205,.26)'; c.lineWidth = Math.max(.6, P.wireWidth * sc * .35); c.globalCompositeOperation = 'lighter'; c.translate(0, -1); }
+          else { c.translate(0, 1); if (lampI <= .02) break; const g = c.createRadialGradient(hl[0], hl[1], 0, hl[0], hl[1], W * .55); g.addColorStop(0, rgba(P.lamp, .55 * lampI * P.lampLevel + .06)); g.addColorStop(1, rgba(P.lamp, 0)); c.strokeStyle = g; c.lineWidth = Math.max(.5, P.wireWidth * sc * .45); c.globalCompositeOperation = 'lighter'; }
           for (const sgn of [1, -1]) { c.beginPath(); pts.forEach((p, i) => { const y = p[1] + sgn * a * sc * Math.sin(p[0] * .5 + ph); i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke(); }
           // barbs
           c.beginPath();
-          for (let bx = 20 + k * 19; bx < W; bx += 58 * sc) {
-            const i = Math.max(0, Math.min(pts.length - 1, Math.round((bx + 12) / 6))), p = pts[i], r = 8 * sc, an = .75 + .25 * Math.sin(tw * 1.4 + bx * .02);
+          for (let bx = 20 + k * 19; bx < W; bx += 46 * sc) {
+            const i = Math.max(0, Math.min(pts.length - 1, Math.round((bx + 12) / 6))), p = pts[i], r = 10.5 * sc, an = .75 + .25 * Math.sin(tw * 1.4 + bx * .02);
             c.moveTo(p[0] - Math.cos(an) * r, p[1] - Math.sin(an) * r); c.lineTo(p[0] + Math.cos(an) * r, p[1] + Math.sin(an) * r);
             c.moveTo(p[0] - Math.cos(-an) * r, p[1] - Math.sin(-an) * r); c.lineTo(p[0] + Math.cos(-an) * r, p[1] + Math.sin(-an) * r);
           }

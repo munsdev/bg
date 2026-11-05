@@ -69,14 +69,17 @@
         if (type === 'range') {
           row.className = 'row';
           row.innerHTML = '<label for="' + id + '">' + p.label + '</label><input id="' + id + '" type="range" min="' + p.min + '" max="' + p.max + '" step="' + p.step + '" value="' + P[p.key] + '"><span class="v">' + P[p.key] + '</span>';
+        } else if (type === 'select') {
+          row.className = 'row c';
+          row.innerHTML = '<label for="' + id + '">' + p.label + '</label><select id="' + id + '">' + p.options.map(o => '<option value="' + o[0] + '">' + o[1] + '</option>').join('') + '</select>';
         } else {
           row.className = 'row ' + (type === 'toggle' ? 't' : 'c');
           row.innerHTML = '<label for="' + id + '">' + p.label + '</label><input id="' + id + '" type="' + (type === 'toggle' ? 'checkbox' : 'color') + '">';
         }
-        const inp = row.querySelector('input'), v = row.querySelector('.v');
-        if (type === 'toggle') inp.checked = !!P[p.key]; else if (type === 'color') inp.value = P[p.key];
+        const inp = row.querySelector('input,select'), v = row.querySelector('.v');
+        if (type === 'toggle') inp.checked = !!P[p.key]; else if (type === 'color' || type === 'select') inp.value = P[p.key];
         inp.oninput = () => {
-          P[p.key] = type === 'toggle' ? inp.checked : type === 'color' ? inp.value : +inp.value;
+          P[p.key] = type === 'toggle' ? inp.checked : (type === 'color' || type === 'select') ? inp.value : +inp.value;
           if (v) v.textContent = inp.value;
           inst.update({ [p.key]: P[p.key] }); save();
         };

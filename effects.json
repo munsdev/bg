@@ -3,5 +3,10 @@
     "name": "Waving flag",
     "path": "/flag/",
     "blurb": "Wind-blown stripes. Stars light up under the pointer."
+  },
+  {
+    "name": "Night map",
+    "path": "/nightmap/",
+    "blurb": "A dark map of the US, Europe, or both. Borders and states light up under the pointer, with clouds drifting over."
   }
 ]

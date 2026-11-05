@@ -13,5 +13,10 @@
     "name": "Night camp",
     "path": "/nightcamp/",
     "blurb": "A blurred night yard: barbed wire swaying up front, a flickering lamp, a dim flag, and candles that light in the windows."
+  },
+  {
+    "name": "Old Glory",
+    "path": "/oldglory/",
+    "blurb": "An accurate, waving American flag in grayscale. Color comes back around the pointer: a fading trail, a spotlight, or ripples."
   }
 ]

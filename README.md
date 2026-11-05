@@ -36,6 +36,7 @@ Animated hero backgrounds. Static site, no build step.
 - `oldglory/`: an accurate 50-star flag (Executive Order 10834 proportions and the standard Old Glory red, white and blue), waving, in grayscale by default.
   - "Color around pointer" picks how color comes back: Color trail (paints in and fades), Spotlight, or Ripples (on move and tap). Saturation, contrast and brightness are set separately for the base and for the colored area.
   - "Focus: Stars" keeps the union in view on any screen shape; "Center" centers the flag.
+  - The cloth is attached at the hoist (or along the top when hung): waves travel to the free end and grow, the free end droops and narrows slightly ("Droop"), folds run diagonally and foreshorten the cloth ("Fold depth").
   - "On tall screens" (phones): Hang vertically (default; stripes vertical, union upper left, as the Flag Code describes for vertical display, which fits a phone almost exactly), Full width (horizontal flag as a band), or Fill (crop).
 
 ## Deploy (Cloudflare Pages)

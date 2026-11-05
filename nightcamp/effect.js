@@ -432,10 +432,6 @@
           const xn = 2 * x / W - 1;
           pts.push([x, by + tilt * (x - W / 2) * (1 + k * .15) + sag * (1 - xn * xn) + (noise(x * .0032 + k * 9.1) - .5) * 22 * sc + sway(x, k, ph)]);
         }
-        if (P.wireSoft > 0) {                                   // soft shadow of the strand, sells the shallow focus
-          c.strokeStyle = rgba(P.wire, .28 * P.wireSoft); c.lineWidth = wpx * 2.6;
-          c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
-        }
         if (!wireTex || !barbSpr) continue;
         // barb positions along the strand: set spacing with a little irregularity, each a random variant, some mirrored
         const list = []; let s0 = hash(k * 3.3) * spacing, seg = 0, acc = 0, j = 0;

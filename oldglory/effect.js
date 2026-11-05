@@ -13,10 +13,12 @@
     { key: 'offY', label: 'Shift Y', min: -.5, max: .5, step: .01, def: 0 },
     { key: 'tilt', label: 'Tilt (deg)', min: -25, max: 25, step: .5, def: -6 },
     { key: 'bg', label: 'Background', type: 'color', def: '#0e1420' },
-    { group: 'Wave', key: 'idleAmp', label: 'Idle wave', min: 0, max: 40, step: .5, def: 16 },
+    { group: 'Wave', key: 'idleAmp', label: 'Wind strength', min: 0, max: 40, step: .5, def: 16 },
     { key: 'idleSpeed', label: 'Idle speed', min: 0, max: 2, step: .01, def: .55 },
     { key: 'gust', label: 'Gusts', min: 0, max: 1, step: .05, def: .6 },
     { key: 'wave', label: 'Wavelength', min: .5, max: 2, step: .05, def: 1 },
+    { key: 'droop', label: 'Droop (free end)', min: 0, max: 1, step: .05, def: .35 },
+    { key: 'fold', label: 'Fold depth', min: 0, max: 2, step: .05, def: 1 },
     { key: 'shade', label: 'Fold shading', min: 0, max: 2, step: .05, def: .8 },
     { key: 'boost', label: 'Wave boost near pointer', min: 0, max: 3, step: .05, def: .6 },
     { group: 'Base (away from pointer)', key: 'baseSat', label: 'Saturation', min: 0, max: 1, step: .02, def: 0 },
@@ -77,9 +79,10 @@
     const ctx = cv.getContext('2d');
     const cl = document.createElement('canvas'), cx = cl.getContext('2d');      // vivid layer, masked
     const mk = document.createElement('canvas'), mx = mk.getContext('2d');      // soft mask (low-res)
-    const texG = document.createElement('canvas'), texC = document.createElement('canvas');
+    const texG = document.createElement('canvas'), texC = document.createElement('canvas'), shTex = document.createElement('canvas'); let shImg = null;
+    const shCv = document.createElement('canvas'), shCx = shCv.getContext('2d');
 
-    let W = 1, H = 1, dpr = 1, k = 1, fw = 1, fh = 1, asp = 1.9, vert = false, ms = .25, raf = 0, last = 0, visible = true, texKey = '';
+    let W = 1, H = 1, dpr = 1, k = 1, fw = 1, fh = 1, Lf = 1, Wf = 1, asp = 1.9, vert = false, ms = .25, raf = 0, last = 0, visible = true, texKey = '';
     const m = { x: 0, y: 0 }, sm = { x: 0, y: 0 };
     let active = false, lastMove = -1e9, raw = 0, energy = 0, t = 0, gT = 0, gustAmp = 1, wx = 0, gi = 0, rings = [], lastRing = null;
     let mb = null, lastPaint = -1e9;                        // screen-space box around everything the mask currently shows
@@ -89,17 +92,25 @@
       const a = P.tilt * RAD, ca = Math.abs(Math.cos(a)), sa = Math.abs(Math.sin(a));
       const bw = W * ca + H * sa, bh = W * sa + H * ca, mgn = P.idleAmp * k * 1.8 + 24, tall = H > W * 1.05;
       vert = tall && P.portrait === 'hang'; asp = vert ? 1 / 1.9 : 1.9;
+      const over = vert ? 1.06 : 1.06 + .14 * P.droop;                                    // room for droop and foreshortening
       if (P.fit === 'contain') fh = Math.min(H, W / asp) * .86 * P.zoom;
       else if (tall && P.portrait === 'width') fh = (bw + 2 * mgn) / asp * P.zoom;          // the whole flag across the screen
-      else fh = Math.max(bh + 2 * mgn, (bw + 2 * mgn) / asp) * P.zoom;
+      else fh = Math.max(bh + 2 * mgn, (bw + 2 * mgn) / asp) * P.zoom * over;
       fw = fh * asp;
+      Lf = vert ? fh : fw; Wf = vert ? fw : fh;          // the cloth as a strip: Lf along the wind from the attached edge, Wf across
     }
     function buildTex() {
       const A = Math.round(Math.min(1400, Math.max(390, Math.min(fw, fh) * dpr)) / 13) * 13, key = [A, vert, P.baseSat, P.baseContrast, P.baseBright, P.boostSat, P.boostContrast, P.boostBright].join('|');
       if (key === texKey) return; texKey = key;
       for (const [tc, s, c2, b] of [[texG, P.baseSat, P.baseContrast, P.baseBright], [texC, P.boostSat, P.boostContrast, P.boostBright]]) {
-        tc.width = Math.round(vert ? A : A * 1.9); tc.height = Math.round(vert ? A * 1.9 : A);
-        paintFlag(tc.getContext('2d'), A, tone(RED, s, c2, b), tone(WHITE, s, c2, b), tone(BLUE, s, c2, b), vert);
+        tc.width = Math.round(A * 1.9); tc.height = A;
+        const g2 = tc.getContext('2d');
+        if (!vert) paintFlag(g2, A, tone(RED, s, c2, b), tone(WHITE, s, c2, b), tone(BLUE, s, c2, b), false);
+        else {                                               // paint upright, then store turned so the top edge runs along the left
+          const tmp = document.createElement('canvas'); tmp.width = A; tmp.height = Math.round(A * 1.9);
+          paintFlag(tmp.getContext('2d'), A, tone(RED, s, c2, b), tone(WHITE, s, c2, b), tone(BLUE, s, c2, b), true);
+          g2.setTransform(0, -1, 1, 0, 0, A); g2.drawImage(tmp, 0, 0); g2.setTransform(1, 0, 0, 1, 0, 0);
+        }
       }
     }
     function resize() {
@@ -109,42 +120,65 @@
       while (W * H * dpr * dpr > 9e6 && dpr > 1) dpr -= .25;
       cv.width = cl.width = Math.round(W * dpr); cv.height = cl.height = Math.round(H * dpr);
       mk.width = Math.max(2, Math.round(W * ms)); mk.height = Math.max(2, Math.round(H * ms));
+      shCv.width = Math.max(2, Math.round(W * dpr * .5)); shCv.height = Math.max(2, Math.round(H * dpr * .5));
       k = Math.min(1.5, Math.max(.6, Math.min(W, H * 1.6) / 1200));
       if (!m.x && !m.y) { m.x = sm.x = W * .6; m.y = sm.y = H * .45; }
       layout(); buildTex();
       if (!raf) drawOnce();
     }
 
-    /* the flag is attached on the left (hoist) and the wave grows toward the fly end */
-    function wave(x) {
-      const u = Math.max(0, Math.min(1, x / fw)), env = .2 + .8 * Math.pow(u, 1.1), kx = 2 * Math.PI / (fw * .32 * P.wave);
-      const a = Math.sin(x * kx - t), b = .5 * Math.sin(x * kx * 2.1 - t * 1.7 + 1.3), c = .22 * Math.sin(x * kx * 4.3 - t * 2.9 + 2.1);
-      const idle = P.idleAmp * k * env * gustAmp * (a + b + c + .5 * Math.sin(x * kx * .4 - t * .35 + .5));
+    /* Cloth model, on the strip: x runs from the attached edge (the hoist, or the top of a hung flag) to the free end.
+       z(x) is how far the cloth bulges toward the viewer. Waves travel toward the free end and grow along the way;
+       the top and bottom edges see the wave slightly out of phase, which makes the folds run diagonally.
+       Seen from slightly below, bulges show as vertical movement; cloth turned away from the viewer foreshortens. */
+    function zAt(x) {
+      const u = Math.max(0, Math.min(1, x / Lf)), kx = 2 * Math.PI / (Lf * .3 * P.wave), w = t * 2.2;
+      const A = P.idleAmp * k * 2.1 * Math.pow(u, 1.25) * gustAmp * (vert ? .6 : 1);
+      let z = A * (Math.sin(kx * x - w) + .45 * Math.sin(2.3 * kx * x - 1.7 * w + 1.1) + .18 * Math.sin(4.1 * kx * x - 2.9 * w + 2));
+      z += A * .3 * Math.pow(u, 4) * Math.sin(kx * x * 3.7 - w * 2.6);                 // flutter at the free end
       const g = Math.exp(-((x - wx) * (x - wx)) / (2 * Math.pow(260 * k, 2)));
-      return idle + P.boost * energy * g * 20 * k * Math.sin(x * .012 - t * 3);
+      return z + P.boost * energy * g * 28 * k * u * Math.sin(x * .012 - t * 3);
     }
-    // flag-local coordinates -> screen
-    // The screen centre (plus shift) shows flag point p: the middle of the flag, or with focus on the stars, the top-left part.
-    function flagMatrix() {
+    function cloth(n) {
+      const cw = Lf / n, phi = Lf * .035, X = new Float32Array(n + 1), T = new Float32Array(n + 1), B = new Float32Array(n + 1), ST = new Float32Array(n + 1), SB = new Float32Array(n + 1);
+      const zt = new Float32Array(n + 1), zb = new Float32Array(n + 1);
+      for (let i = 0; i <= n; i++) { zt[i] = zAt(i * cw - phi); zb[i] = zAt(i * cw + phi); }
+      const view = .42 * P.fold, dro = vert ? 0 : P.droop * Wf * .13;
+      for (let i = 0; i <= n; i++) {
+        const u = i / n, j0 = Math.max(0, i - 1), j1 = Math.min(n, i + 1), d = (j1 - j0) * cw;
+        const st = (zt[j1] - zt[j0]) / d, sb = (zb[j1] - zb[j0]) / d;
+        if (i) { const s2 = ((zt[i] - zt[i - 1]) + (zb[i] - zb[i - 1])) / (2 * cw) * P.fold; X[i] = X[i - 1] + cw / Math.sqrt(1 + s2 * s2 * .8); }
+        const sag = dro * Math.pow(u, 2.2), zc = (zt[i] + zb[i]) / 2;
+        // geometry follows the mean bulge (so slices meet exactly); the top/bottom phase difference only drives the shading
+        T[i] = zc * view + sag; B[i] = Wf + zc * view + sag * .72;                           // the free end sags, and narrows a little
+        ST[i] = -st * P.shade; SB[i] = -sb * P.shade;
+      }
+      return { n, cw, X, T, B, ST, SB };
+    }
+    const mul = (A, B) => [A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1], A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3], A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5]];
+    // Visual flag (fw x fh, upright) -> screen. The screen centre (plus shift) shows flag point p.
+    function visualMatrix() {
       const a = P.tilt * RAD, cs = Math.cos(a), sn = Math.sin(a), ox = W / 2 + P.offX * W, oy = H / 2 + P.offY * H;
       let px = fw / 2, py = fh / 2;
       if (P.focus === 'canton' && P.fit === 'cover') { const mg = P.idleAmp * k * 1.8 + 24; px = Math.min(fw / 2, W / 2 + mg + W * .04); py = Math.min(fh / 2, H / 2 + mg + H * .04); }
       return [cs, sn, -sn, cs, ox - (cs * px - sn * py), oy - (sn * px + cs * py)];
     }
-    function toFlag(x, y) { const M = flagMatrix(), dx = x - M[4], dy = y - M[5]; return [dx * M[0] + dy * M[1], -dx * M[1] + dy * M[0]]; }
+    // Strip -> screen. For a hung flag the strip runs down from the top edge: x_visual = fw - y_strip, y_visual = x_strip.
+    function flagMatrix() { const M = visualMatrix(); return vert ? mul(M, [0, 1, -1, 0, fw, 0]) : M; }
+    function toFlag(x, y) { const M = visualMatrix(), dx = x - M[4], dy = y - M[5], vx = dx * M[0] + dy * M[1], vy = -dx * M[1] + dy * M[0]; return vert ? [vy, fw - vx] : [vx, vy]; }
 
-    // Each slice is sheared so its edges meet the neighbouring slices exactly (a piecewise-linear warp, no stair steps).
-    // Slices outside `box` (screen space) are skipped.
-    function drawFlag(c, tex, M, cols, box) {
-      const sx = tex.width / fw, n = cols.length - 1, cw = fw / n;
-      for (let i = 0; i < n; i++) {
-        const x0 = i * cw, x1 = x0 + cw, y0 = Math.min(cols[i], cols[i + 1]), y1 = Math.max(cols[i], cols[i + 1]) + fh;
-        const X = [M[0] * x0 + M[2] * y0, M[0] * x1 + M[2] * y0, M[0] * x0 + M[2] * y1, M[0] * x1 + M[2] * y1];
-        const Y = [M[1] * x0 + M[3] * y0, M[1] * x1 + M[3] * y0, M[1] * x0 + M[3] * y1, M[1] * x1 + M[3] * y1];
-        if (Math.max(...X) + M[4] < box[0] || Math.min(...X) + M[4] > box[2] || Math.max(...Y) + M[5] < box[1] || Math.min(...Y) + M[5] > box[3]) continue;
-        const sl = (cols[i + 1] - cols[i]) / cw, tt = cols[i] - sl * x0;
-        c.setTransform(dpr * (M[0] + M[2] * sl), dpr * (M[1] + M[3] * sl), dpr * M[2], dpr * M[3], dpr * (M[2] * tt + M[4]), dpr * (M[3] * tt + M[5]));
-        c.drawImage(tex, x0 * sx, 0, Math.max(1, cw * sx), tex.height, x0, 0, cw + .6, fh);
+    // One slice per node pair: scaled along x (foreshortening), sheared to follow the top edge, scaled to the local height.
+    function drawFlag(c, tex, M, G, box, edges, scale) {
+      const S2 = scale || dpr, sx = (edges ? tex.width - 1 : tex.width) / Lf, so = edges ? .5 : 0;
+      for (let i = 0; i < G.n; i++) {
+        const x0 = G.X[i], x1 = G.X[i + 1], ys = [G.T[i], G.T[i + 1], G.B[i], G.B[i + 1]], xs = [x0, x1, x0, x1];
+        let mnx = 1e9, mxx = -1e9, mny = 1e9, mxy = -1e9;
+        for (let q = 0; q < 4; q++) { const X = M[0] * xs[q] + M[2] * ys[q] + M[4], Y = M[1] * xs[q] + M[3] * ys[q] + M[5]; if (X < mnx) mnx = X; if (X > mxx) mxx = X; if (Y < mny) mny = Y; if (Y > mxy) mxy = Y; }
+        if (mxx < box[0] || mnx > box[2] || mxy < box[1] || mny > box[3]) continue;
+        const a = (x1 - x0) / G.cw, b = (G.T[i + 1] - G.T[i]) / G.cw, d = ((G.B[i] - G.T[i]) + (G.B[i + 1] - G.T[i + 1])) / 2 / Wf;
+        const L = mul(M, [a, b, 0, d, x0, G.T[i]]);
+        c.setTransform(S2 * L[0], S2 * L[1], S2 * L[2], S2 * L[3], S2 * L[4], S2 * L[5]);
+        c.drawImage(tex, i * G.cw * sx + so, 0, Math.max(edges ? .01 : 1, G.cw * sx), tex.height, 0, 0, G.cw + .7 / Math.max(.2, a), Wf);
       }
     }
 
@@ -194,36 +228,34 @@
     function draw() {
       const c = ctx; c.setTransform(dpr, 0, 0, dpr, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
       c.fillStyle = P.bg; c.fillRect(0, 0, W, H);
-      const M = flagMatrix(), n = Math.min(600, Math.max(60, Math.ceil(fw / 8))), cw = fw / n, cols = new Float32Array(n + 1);
-      for (let i = 0; i <= n; i++) cols[i] = wave(i * cw);
-      drawFlag(c, texG, M, cols, [-4, -4, W + 4, H + 4]);
+      const M = flagMatrix(), G = cloth(Math.min(600, Math.max(60, Math.ceil(Lf / 8))));
+      drawFlag(c, texG, M, G, [-4, -4, W + 4, H + 4]);
       if (P.mode !== 'none' && mb) {                          // vivid flag, masked to where the pointer has been; only inside the mask's box
         const bx = Math.max(0, Math.floor(mb[0])), by = Math.max(0, Math.floor(mb[1])), bx1 = Math.min(W, Math.ceil(mb[2])), by1 = Math.min(H, Math.ceil(mb[3]));
         if (bx1 > bx && by1 > by) {
           const px = Math.floor(bx * dpr), py = Math.floor(by * dpr), pw = Math.ceil((bx1 - bx) * dpr) + 1, ph = Math.ceil((by1 - by) * dpr) + 1;
           cx.setTransform(1, 0, 0, 1, 0, 0); cx.globalCompositeOperation = 'source-over'; cx.clearRect(px, py, pw, ph);
           cx.save(); cx.beginPath(); cx.rect(px, py, pw, ph); cx.clip();
-          drawFlag(cx, texC, M, cols, [bx, by, bx1, by1]);
+          drawFlag(cx, texC, M, G, [bx, by, bx1, by1]);
           cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.globalCompositeOperation = 'destination-in'; cx.drawImage(mk, 0, 0, W, H);
           cx.restore(); cx.globalCompositeOperation = 'source-over';
           c.setTransform(1, 0, 0, 1, 0, 0); c.drawImage(cl, px, py, pw, ph, px, py, pw, ph); c.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
       }
-      if (P.shade > 0) {                                     // folds: one smooth gradient across the flag, clipped to its outline
-        c.setTransform(dpr * M[0], dpr * M[1], dpr * M[2], dpr * M[3], dpr * M[4], dpr * M[5]);
-        c.save(); c.beginPath();
-        for (let i = 0; i <= n; i++) i ? c.lineTo(i * cw, cols[i]) : c.moveTo(0, cols[0]);
-        for (let i = n; i >= 0; i--) c.lineTo(i * cw, cols[i] + fh);
-        c.closePath(); c.clip();
-        const gl = c.createLinearGradient(0, 0, fw, 0), gd = c.createLinearGradient(0, 0, fw, 0), step = Math.max(1, Math.floor(n / 160));
-        for (let i = 0; i < n; i += step) {
-          const j = Math.min(n, i + step), sl = (cols[j] - cols[i]) / (cw * (j - i)) * P.shade * .9, a = Math.min(.16, Math.abs(sl)), pos = i / n;
-          gl.addColorStop(pos, 'rgba(255,255,255,' + (sl > 0 ? a : 0).toFixed(3) + ')');
-          gd.addColorStop(pos, 'rgba(0,0,0,' + (sl < 0 ? Math.min(.3, a * 1.6) : 0).toFixed(3) + ')');
+      if (P.shade > 0) {                                     // folds: an opaque gray shade map (50% gray = no change), overlay-blended
+        const R = 16, nw = G.n + 1;                          // one pixel per slice edge; each slice samples between its two edges
+        if (shTex.width !== nw || shTex.height !== R) { shTex.width = nw; shTex.height = R; shImg = shTex.getContext('2d').createImageData(nw, R); }
+        const d = shImg.data;
+        for (let i = 0; i < nw; i++) for (let j = 0; j < R; j++) {
+          const v = G.ST[i] + (G.SB[i] - G.ST[i]) * (j + .5) / R, o = (j * nw + i) * 4;
+          d[o] = d[o + 1] = d[o + 2] = 128 + Math.max(-60, Math.min(34, v * 190)); d[o + 3] = 255;
         }
-        const y0 = Math.min(...cols) - 2, y1 = Math.max(...cols) + fh + 2;
-        c.fillStyle = gl; c.fillRect(0, y0, fw, y1 - y0); c.fillStyle = gd; c.fillRect(0, y0, fw, y1 - y0);
-        c.restore(); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+        shTex.getContext('2d').putImageData(shImg, 0, 0);
+        const ss = dpr * .5;
+        shCx.setTransform(1, 0, 0, 1, 0, 0); shCx.fillStyle = '#808080'; shCx.fillRect(0, 0, shCv.width, shCv.height);
+        drawFlag(shCx, shTex, M, G, [-4, -4, W + 4, H + 4], true, ss);
+        c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'overlay'; c.drawImage(shCv, 0, 0, cv.width, cv.height);
+        c.globalCompositeOperation = 'source-over'; c.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
       if (P.glow > 0 && gi > .01 && P.mode !== 'none') {
         const R = P.radius * k * 1.3, g = c.createRadialGradient(sm.x, sm.y, 0, sm.x, sm.y, R);
@@ -253,7 +285,7 @@
 
     return {
       update(next) {
-        const geo = ['fit', 'zoom', 'tilt', 'idleAmp', 'portrait'].some(q => next[q] !== undefined && next[q] !== P[q]);
+        const geo = ['fit', 'zoom', 'tilt', 'idleAmp', 'portrait', 'droop'].some(q => next[q] !== undefined && next[q] !== P[q]);
         Object.assign(P, next); applyBg();
         if (geo) layout(); buildTex();
         if (geo) { mb = null; }

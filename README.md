@@ -31,6 +31,7 @@ Animated hero backgrounds. Static site, no build step.
 - `nightcamp/`: a blurred night yard in perspective. Barbed wire sways in front, a street lamp flickers, a dim American flag waves in the distance, and a candle lights in a window when you hover it (or on its own when idle / on touch screens).
   - Everything is drawn in code (no images). The background is drawn small and upscaled, which is the blur. "Background blur", "Exposure", "Fog" and "Vignette" set the mood; "Barbed wire" and "Wind" control the wire.
   - Colors are set in the Tune panel. Export gives a self-contained file.
+  - `nightcamp/barbed-wire.svg` is the barbed wire tile on its own (288 x 119, repeats seamlessly along x). The effect builds the same tile in code (`Effects.nightcamp.wireSVG(color, barbSize, blur)`), so wire color, barb size and focus can change it.
 
 ## Deploy (Cloudflare Pages)
 

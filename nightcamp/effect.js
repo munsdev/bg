@@ -28,7 +28,7 @@
     { key: 'wireY', label: 'Position', min: .25, max: .95, step: .01, def: .55 },
     { key: 'wireGap', label: 'Strand spacing', min: .06, max: .3, step: .01, def: .22 },
     { key: 'wireWidth', label: 'Thickness', min: 1, max: 12, step: .25, def: 6 },
-    { key: 'barbSize', label: 'Barb size', min: .4, max: 2, step: .05, def: 1 },
+    { key: 'barbSize', label: 'Barb size', min: .4, max: 2, step: .05, def: 1.3 },
     { key: 'wireSoft', label: 'Out of focus', min: 0, max: 1, step: .05, def: .5 },
     { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 2 },
     { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -1.5 },
@@ -54,6 +54,41 @@
     for (let i = 0; i < 4; i++) { const a = q[i], b = q[(i + 1) % 4], c = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]); if (c > 0) pos++; else if (c < 0) neg++; }
     return !(pos && neg);
   };
+
+  /* Barbed wire tile (own drawing, no license strings attached). Two twisted wires, two barbs per tile,
+     each barb a tight coil with four tapered spikes. Tiles seamlessly along x. Returns { svg, w, h, cy }. */
+  const hex2 = (a, b, t) => { const A = hexv(a), B = hexv(b); return '#' + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, '0')).join(''); };
+  function wireSVG(col, barb, soft) {
+    const T = 288, spike = 40 * barb, Ht = Math.ceil(2 * (spike * .95 + 10)), cy = Ht / 2;
+    const dark = hex2(col, '#000000', .2), mid = hex2(col, '#4a4f56', .28), hi = hex2(col, '#8f969f', .45);
+    const f = n => n.toFixed(2);
+    let o = '<svg xmlns="http://www.w3.org/2000/svg" width="' + T + '" height="' + Ht + '" viewBox="0 0 ' + T + ' ' + Ht + '">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + hi + '"/><stop offset=".42" stop-color="' + mid + '"/><stop offset="1" stop-color="' + dark + '"/></linearGradient>' +
+      '<linearGradient id="s" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="' + dark + '"/><stop offset=".45" stop-color="' + hi + '"/><stop offset="1" stop-color="' + dark + '"/></linearGradient>' +
+      (soft > 0 ? '<filter id="b" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="' + f(soft * 1.3) + '"/></filter>' : '') +
+      '</defs><g' + (soft > 0 ? ' filter="url(#b)"' : '') + '>';
+    const barbs = [[78, [-62, -121, 57, 116], [1, .9, .95, 1.05]], [222, [-55, -127, 64, 112], [.92, 1.05, 1, .9]]];
+    const spikes = bx => { let r = ''; const b = barbs.find(q => q[0] === bx);
+      b[1].forEach((deg, i) => {
+        const a = deg * Math.PI / 180, L = spike * b[2][i], ca = Math.cos(a), sa = Math.sin(a), nx = -sa * 2, ny = ca * 2;
+        const x0 = bx + ca * 3, y0 = cy + sa * 3, tx = bx + ca * L, ty = cy + sa * L, bend = (i % 2 ? 1 : -1) * L * .03;
+        const mx = bx + ca * L * .55 + nx * bend / 2, my = cy + sa * L * .55 + ny * bend / 2;
+        // tapered spike with a slanted cut at the tip
+        r += '<path d="M' + f(x0 + nx) + ' ' + f(y0 + ny) + ' Q' + f(mx + nx * .6) + ' ' + f(my + ny * .6) + ' ' + f(tx) + ' ' + f(ty) +
+          ' L' + f(tx - ca * 3 - nx * .5) + ' ' + f(ty - sa * 3 - ny * .5) + ' Q' + f(mx - nx * .6) + ' ' + f(my - ny * .6) + ' ' + f(x0 - nx) + ' ' + f(y0 - ny) + 'Z" fill="url(#s)" stroke="' + dark + '" stroke-width=".7" stroke-linejoin="round"/>';
+      });
+      return r; };
+    barbs.forEach(b => { o += spikes(b[0]); });
+    // the main twisted pair: a solid core, then overlapping slanted segments alternating between the two wires
+    o += '<rect x="-2" y="' + f(cy - 4.6) + '" width="' + (T + 4) + '" height="9.2" fill="' + dark + '"/>';
+    for (let x = -24, i = 0; x <= T + 24; x += 12, i++) {
+      const yo = i % 2 ? .6 : -.6;
+      o += '<g transform="translate(' + (x + 6) + ' ' + f(cy + yo) + ') rotate(-34)"><rect x="-11.5" y="-3.7" width="23" height="7.4" rx="3.7" fill="url(#g)" stroke="' + dark + '" stroke-width=".8"/></g>';
+    }
+    // coils where the barbs are wrapped on
+    barbs.forEach(b => { for (let j = 0; j < 4; j++) o += '<ellipse cx="' + (b[0] - 6 + j * 4) + '" cy="' + cy + '" rx="2.5" ry="7.2" transform="rotate(-16 ' + (b[0] - 6 + j * 4) + ' ' + cy + ')" fill="url(#s)" stroke="' + dark + '" stroke-width=".7"/>'; });
+    return { svg: o + '</g></svg>', w: T, h: Ht, cy };
+  }
 
   /* tileable fractal noise, used for drifting sky clouds */
   let skyTex = null;
@@ -103,6 +138,7 @@
     let blocks = [], wins = [], posts = [], lamps = [], trees = [];
     const m = { x: -1e4, y: -1e4 }; let active = false, lastMove = -1e9, energy = 0, raw = 0, lx = 0, ly = 0;
     let t = 0, tw = 0, clock = 0, idleNext = 0, lampEv = { until: 0, next: 800, seed: 0 };
+    let wireTex = null, wireInfo = null, wireKey = '', wireLoading = '';
     const pr = (x, y, z) => [vx + f * x / z, vy + f * (HE - y) / z];
     const fogAt = z => 1 - Math.exp(-z / 38 * (.4 + P.fog * 1.2));
 
@@ -279,10 +315,42 @@
       const dx = (x - lx) / (W * .2); y += P.gustPointer * energy * Math.exp(-dx * dx) * Math.sin(tw * 6.5 - x * .02 + ph) * 14 * sc;
       return y;
     }
-    // A heavy strand close to the lens: two wires twisted together, a soft out-of-focus halo, and large four-pointed barbs.
+    // Rasterise the SVG tile once per wire color / barb size / focus setting.
+    function ensureWireTex() {
+      const key = [P.wire, P.barbSize, P.wireSoft].join('|');
+      if (key === wireKey || key === wireLoading) return;
+      wireLoading = key;
+      const info = wireSVG(P.wire, P.barbSize, P.wireSoft), img = new Image();
+      img.onload = () => {
+        if (wireLoading !== key) return;
+        const R = 3, c2 = document.createElement('canvas'); c2.width = info.w * R; c2.height = info.h * R;
+        c2.getContext('2d').drawImage(img, 0, 0, c2.width, c2.height);
+        wireTex = c2; wireInfo = info; wireKey = key; wireLoading = '';
+        if (!raf) drawOnce();
+      };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(info.svg);
+    }
+    // Lay the tile along a polyline: one thin slice per segment, rotated to the segment, so the strand bends as it sways.
+    function laneAlong(c, pts, ts, phase) {
+      const src = wireTex, R = src.width / wireInfo.w, T = wireInfo.w, h = wireInfo.h * ts;
+      let s0 = phase;
+      for (let i = 0; i < pts.length - 1; i++) {
+        const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy);
+        if (d < .01) continue;
+        const cs = dx / d, sn = dy / d; let du = d / ts, off = 0;
+        while (du > 1e-6) {
+          const u0 = ((s0 % T) + T) % T, take = Math.min(du, T - u0), sw = take * ts;
+          c.setTransform(dpr * cs, dpr * sn, -dpr * sn, dpr * cs, dpr * (a[0] + cs * off), dpr * (a[1] + sn * off));
+          c.drawImage(src, u0 * R, 0, Math.max(.5, take * R), src.height, 0, -h / 2, sw + .6, h);
+          s0 += take; du -= take; off += sw;
+        }
+      }
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
     function drawWire(c, lampI) {
+      ensureWireTex();
       const S = P.strands | 0, gapPx = H * P.wireGap, wsc = Math.max(.95, u / 1000), wpx = P.wireWidth * wsc, x0 = P.post ? W * .035 : -12;
-      const tilt = Math.tan(P.wireTilt * RAD);
+      const tilt = Math.tan(P.wireTilt * RAD), ts = wpx * .13;
       c.lineCap = 'round'; c.lineJoin = 'round';
       for (let k = 0; k < S; k++) {
         const by = H * P.wireY + (k - (S - 1) / 2) * gapPx, ph = k * 1.7 + .6, sag = P.wireSag * sc, pts = [];
@@ -290,28 +358,17 @@
           const xn = 2 * x / W - 1;
           pts.push([x, by + tilt * (x - W / 2) * (1 + k * .15) + sag * (1 - xn * xn) + (noise(x * .0032 + k * 9.1) - .5) * 22 * sc + sway(x, k, ph)]);
         }
-        const twist = (x, sg) => sg * wpx * .5 * Math.sin(x * .3 / wsc + ph);
-        if (P.wireSoft > 0) {                                   // defocus halo
-          c.strokeStyle = rgba(P.wire, .3 * P.wireSoft); c.lineWidth = wpx * 2.6;
+        if (P.wireSoft > 0) {                                   // soft shadow of the strand, sells the shallow focus
+          c.strokeStyle = rgba(P.wire, .28 * P.wireSoft); c.lineWidth = wpx * 2.6;
           c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
         }
-        for (const sg of [1, -1]) { c.strokeStyle = P.wire; c.lineWidth = wpx * .66; c.beginPath(); pts.forEach((p, i) => { const y = p[1] + twist(p[0], sg); i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke(); }
-        c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(170,182,205,.16)'; c.lineWidth = Math.max(.6, wpx * .16);
-        c.beginPath(); pts.forEach((p, i) => { const y = p[1] - wpx * .32; i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke();
-        if (lampI > .02) { const hl = lamps[0].head, g = c.createRadialGradient(hl[0], hl[1], 0, hl[0], hl[1], W * .5); g.addColorStop(0, rgba(P.lamp, .35 * lampI * P.lampLevel)); g.addColorStop(1, rgba(P.lamp, 0)); c.strokeStyle = g; c.lineWidth = Math.max(.6, wpx * .18); c.stroke(); }
-        c.globalCompositeOperation = 'source-over';
-        // barbs: irregular spacing, a knot on the wire and four tapered spikes
-        let bx = x0 + (25 + hash(k * 7.7) * 40) * wsc, n = 0;
-        while (bx < W) {
-          const i = Math.max(1, Math.min(pts.length - 2, Math.round((bx - x0) / 5))), p = pts[i], dir = Math.atan2(pts[i + 1][1] - pts[i - 1][1], pts[i + 1][0] - pts[i - 1][0]);
-          const L = Math.max(14, u * .03) * P.barbSize * (.8 + .5 * hash(k * 31 + n)), bw = wpx * .3, sw = Math.sin(tw * 1.4 + bx * .02 + k) * .1, off = hash(k * 11 + n * 3) * .35;
-          c.fillStyle = P.wire;
-          for (const an of [.62 + off, Math.PI - .62 - off * .6, Math.PI + .55 + off * .7, -.62 - off * .5]) {
-            const a2 = dir + an + sw, ex = p[0] + Math.cos(a2) * L, ey = p[1] + Math.sin(a2) * L, nx = -Math.sin(a2) * bw, ny = Math.cos(a2) * bw;
-            c.beginPath(); c.moveTo(p[0] + nx, p[1] + ny); c.lineTo(ex, ey); c.lineTo(p[0] - nx, p[1] - ny); c.closePath(); c.fill();
-          }
-          c.beginPath(); c.ellipse(p[0], p[1], wpx * .95, wpx * .72, dir, 0, 6.3); c.fill();
-          n++; bx += (62 + hash(k * 13 + n * 1.7) * 70) * wsc;
+        if (wireTex) laneAlong(c, pts, ts, hash(k * 5.1) * wireInfo.w);
+        if (lampI > .02) {                                      // warm glint from the street lamp
+          const hl = lamps[0].head, g = c.createRadialGradient(hl[0], hl[1], 0, hl[0], hl[1], W * .5);
+          g.addColorStop(0, rgba(P.lamp, .3 * lampI * P.lampLevel)); g.addColorStop(1, rgba(P.lamp, 0));
+          c.globalCompositeOperation = 'lighter'; c.strokeStyle = g; c.lineWidth = Math.max(.6, wpx * .16);
+          c.beginPath(); pts.forEach((p, i) => { const y = p[1] - wpx * .35; i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke();
+          c.globalCompositeOperation = 'source-over';
         }
       }
     }
@@ -378,5 +435,5 @@
   }
 
   window.Effects = window.Effects || {};
-  window.Effects.nightcamp = { name: 'Night camp', params, defaults, mount };
+  window.Effects.nightcamp = { name: 'Night camp', params, defaults, mount, wireSVG };
 })();

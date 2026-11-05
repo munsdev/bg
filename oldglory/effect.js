@@ -31,7 +31,7 @@
     { key: 'boostContrast', label: 'Contrast boost', min: .6, max: 1.8, step: .02, def: 1.12 },
     { key: 'boostBright', label: 'Brightness', min: .6, max: 1.5, step: .02, def: 1.02 },
     { key: 'glow', label: 'Glow', min: 0, max: 1, step: .05, def: .15 },
-    { key: 'fade', label: 'Fade back (s)', min: .2, max: 8, step: .1, def: 1.8 },
+    { key: 'fade', label: 'Fade back (s)', min: .2, max: 8, step: .1, def: .2 },
     { key: 'lag', label: 'Follow lag', min: 1, max: 30, step: .5, def: 10 },
     { key: 'autopilot', label: 'Wander when idle', type: 'toggle', def: false }
   ];

@@ -7,9 +7,9 @@
     { group: 'Scene', key: 'horizon', label: 'Horizon height', min: .25, max: .65, step: .01, def: .42 },
     { key: 'depth', label: 'Depth (zoom)', min: .6, max: 1.6, step: .02, def: 1 },
     { key: 'blur', label: 'Background blur', min: 0, max: 1, step: .02, def: .55 },
-    { key: 'exposure', label: 'Exposure', min: .4, max: 2, step: .05, def: 1.15 },
-    { group: 'Colors', key: 'sky', label: 'Sky / haze', type: 'color', def: '#2d3642' },
-    { key: 'building', label: 'Buildings', type: 'color', def: '#161b23' },
+    { key: 'exposure', label: 'Exposure', min: .4, max: 2, step: .05, def: 1.35 },
+    { group: 'Colors', key: 'sky', label: 'Sky / haze', type: 'color', def: '#454d58' },
+    { key: 'building', label: 'Buildings', type: 'color', def: '#1c2129' },
     { key: 'candle', label: 'Candle', type: 'color', def: '#ffb04f' },
     { key: 'lamp', label: 'Street lamp', type: 'color', def: '#ffc27a' },
     { key: 'wire', label: 'Barbed wire', type: 'color', def: '#060708' },
@@ -25,15 +25,19 @@
     { key: 'flagLight', label: 'Flag light', min: 0, max: 1, step: .05, def: 0 },
     { group: 'Barbed wire', key: 'wireOn', label: 'Wire on', type: 'toggle', def: true },
     { key: 'strands', label: 'Strands', min: 1, max: 5, step: 1, def: 3 },
-    { key: 'wireY', label: 'Height', min: .35, max: .95, step: .01, def: .7 },
-    { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 3 },
-    { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -2.5 },
-    { key: 'wireWidth', label: 'Thickness', min: .6, max: 4, step: .05, def: 2.8 },
+    { key: 'wireY', label: 'Position', min: .25, max: .95, step: .01, def: .55 },
+    { key: 'wireGap', label: 'Strand spacing', min: .06, max: .3, step: .01, def: .22 },
+    { key: 'wireWidth', label: 'Thickness', min: 1, max: 12, step: .25, def: 6 },
+    { key: 'barbSize', label: 'Barb size', min: .4, max: 2, step: .05, def: 1 },
+    { key: 'wireSoft', label: 'Out of focus', min: 0, max: 1, step: .05, def: .5 },
+    { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 2 },
+    { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -1.5 },
+    { key: 'post', label: 'Fence post (foreground)', type: 'toggle', def: true },
     { group: 'Wind', key: 'wind', label: 'Wind', min: 0, max: 2, step: .05, def: .6 },
     { key: 'gustPointer', label: 'Pointer stirs wire', min: 0, max: 1, step: .05, def: .5 },
-    { group: 'Atmosphere', key: 'fog', label: 'Fog', min: 0, max: 1, step: .05, def: .5 },
+    { group: 'Atmosphere', key: 'fog', label: 'Fog', min: 0, max: 1, step: .05, def: .65 },
     { key: 'clouds', label: 'Sky clouds', min: 0, max: 1, step: .05, def: .4 },
-    { key: 'grain', label: 'Film grain', min: 0, max: 1, step: .05, def: .4 },
+    { key: 'grain', label: 'Film grain', min: 0, max: 1, step: .05, def: .5 },
     { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: .05, def: .65 }
   ];
   const defaults = {};
@@ -180,7 +184,7 @@
         q.save(); q.beginPath(); q.rect(0, 0, W, vy + 2); q.clip(); q.globalAlpha = .3 * P.clouds; q.fillStyle = pat; q.fillRect(0, 0, W, vy + 2); q.restore(); q.globalAlpha = 1;
       }
       g = q.createRadialGradient(vx, vy, 0, vx, vy, u * .8); g.addColorStop(0, rgba(fogc, .5 * P.fog + .1)); g.addColorStop(1, rgba(fogc, 0)); q.fillStyle = g; q.fillRect(0, 0, W, H);
-      g = q.createLinearGradient(0, vy, 0, H); g.addColorStop(0, mixc(P.sky, '#000000', .3)); g.addColorStop(.3, '#14181e'); g.addColorStop(1, '#0b0d11'); q.fillStyle = g; q.fillRect(0, vy, W, H - vy);
+      g = q.createLinearGradient(0, vy, 0, H); g.addColorStop(0, mixc(P.sky, '#000000', .3)); g.addColorStop(.3, mixc(P.sky, '#000000', .5)); g.addColorStop(1, mixc(P.sky, '#000000', .56)); q.fillStyle = g; q.fillRect(0, vy, W, H - vy);
       // far line of trees, tower
       const treeC = mixc(P.sky, '#000000', .72);
       q.fillStyle = treeC; q.fillRect(0, vy - 2, W, 4);
@@ -248,6 +252,13 @@
         q.fillStyle = rgba('#fff3d6', Math.min(1, .7 * I)); q.beginPath(); q.arc(L.head[0], L.head[1], Math.max(1.2, 4 * f / L.z / 16), 0, 6.3); q.fill();
         q.globalCompositeOperation = 'source-over';
       }
+      if (P.post) {                                         // we are standing outside the fence: a big out-of-focus post at the edge
+        const pw = u * .06, x0 = W * .035 - pw / 2, lean = u * .006;
+        g = q.createLinearGradient(x0, 0, x0 + pw, 0); g.addColorStop(0, mixc(P.sky, '#000000', .55)); g.addColorStop(.25, '#0a0b0e'); g.addColorStop(1, '#050608');
+        q.fillStyle = g; q.beginPath(); q.moveTo(x0 - lean, H + 4); q.lineTo(x0 + lean, -4); q.lineTo(x0 + pw + lean, -4); q.lineTo(x0 + pw - lean, H + 4); q.closePath(); q.fill();
+        const gap = H * P.wireGap, n = P.strands | 0;
+        for (let k = 0; k < n; k++) { const y = H * P.wireY + (k - (n - 1) / 2) * gap; q.fillStyle = '#050608'; q.fillRect(x0 + pw * .55, y - u * .012, pw * .7, u * .024); }
+      }
       if (P.exposure > 1) { q.globalCompositeOperation = 'lighter'; q.fillStyle = rgba(P.sky, (P.exposure - 1) * .3); q.fillRect(0, 0, W, H); q.globalCompositeOperation = 'source-over'; }
       else if (P.exposure < 1) { q.fillStyle = 'rgba(0,0,0,' + ((1 - P.exposure) * .8) + ')'; q.fillRect(0, 0, W, H); }
       // low fog drifting over the ground
@@ -263,32 +274,44 @@
 
     /* ---------- foreground barbed wire (sharp) ---------- */
     function sway(x, s, ph) {
-      const A = 5 * sc * P.wind, gust = 1 + .5 * Math.sin(tw * .37 + ph);
+      const A = 4 * sc * P.wind, gust = 1 + .5 * Math.sin(tw * .37 + ph);
       let y = A * gust * (Math.sin(x * .0036 + tw * 1.15 + ph) * .6 + Math.sin(x * .0095 - tw * 1.9 + ph * 1.7) * .4);
-      const dx = (x - lx) / (W * .2); y += P.gustPointer * energy * Math.exp(-dx * dx) * Math.sin(tw * 6.5 - x * .02 + ph) * 15 * sc;
+      const dx = (x - lx) / (W * .2); y += P.gustPointer * energy * Math.exp(-dx * dx) * Math.sin(tw * 6.5 - x * .02 + ph) * 14 * sc;
       return y;
     }
+    // A heavy strand close to the lens: two wires twisted together, a soft out-of-focus halo, and large four-pointed barbs.
     function drawWire(c, lampI) {
-      const S = P.strands | 0, gap = u * .07;
-      const hl = lamps[0].head;
+      const S = P.strands | 0, gapPx = H * P.wireGap, wsc = Math.max(.95, u / 1000), wpx = P.wireWidth * wsc, x0 = P.post ? W * .035 : -12;
+      const tilt = Math.tan(P.wireTilt * RAD);
+      c.lineCap = 'round'; c.lineJoin = 'round';
       for (let k = 0; k < S; k++) {
-        const by = H * P.wireY + (k - (S - 1) / 2) * gap, tilt = Math.tan(P.wireTilt * RAD), sag = P.wireSag * sc * (1 + (k % 2) * .25), ph = k * 1.7 + .6, pts = [];
-        for (let x = -12; x <= W + 12; x += 6) { const xn = 2 * x / W - 1; pts.push([x, by + tilt * (x - W / 2) + sag * (1 - xn * xn) + sway(x, k, ph)]); }
-        const a = P.wireWidth * .95;
-        c.lineCap = 'round'; c.lineJoin = 'round';
-        for (let pass = 0; pass < 3; pass++) {
-          if (pass === 0) { c.strokeStyle = P.wire; c.lineWidth = P.wireWidth * sc + .4; }
-          else if (pass === 1) { c.strokeStyle = 'rgba(165,180,205,.26)'; c.lineWidth = Math.max(.6, P.wireWidth * sc * .35); c.globalCompositeOperation = 'lighter'; c.translate(0, -1); }
-          else { c.translate(0, 1); if (lampI <= .02) break; const g = c.createRadialGradient(hl[0], hl[1], 0, hl[0], hl[1], W * .55); g.addColorStop(0, rgba(P.lamp, .55 * lampI * P.lampLevel + .06)); g.addColorStop(1, rgba(P.lamp, 0)); c.strokeStyle = g; c.lineWidth = Math.max(.5, P.wireWidth * sc * .45); c.globalCompositeOperation = 'lighter'; }
-          for (const sgn of [1, -1]) { c.beginPath(); pts.forEach((p, i) => { const y = p[1] + sgn * a * sc * Math.sin(p[0] * .5 + ph); i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke(); }
-          // barbs
-          c.beginPath();
-          for (let bx = 20 + k * 19; bx < W; bx += 46 * sc) {
-            const i = Math.max(0, Math.min(pts.length - 1, Math.round((bx + 12) / 6))), p = pts[i], r = 10.5 * sc, an = .75 + .25 * Math.sin(tw * 1.4 + bx * .02);
-            c.moveTo(p[0] - Math.cos(an) * r, p[1] - Math.sin(an) * r); c.lineTo(p[0] + Math.cos(an) * r, p[1] + Math.sin(an) * r);
-            c.moveTo(p[0] - Math.cos(-an) * r, p[1] - Math.sin(-an) * r); c.lineTo(p[0] + Math.cos(-an) * r, p[1] + Math.sin(-an) * r);
+        const by = H * P.wireY + (k - (S - 1) / 2) * gapPx, ph = k * 1.7 + .6, sag = P.wireSag * sc, pts = [];
+        for (let x = x0; x <= W + 12; x += 5) {
+          const xn = 2 * x / W - 1;
+          pts.push([x, by + tilt * (x - W / 2) * (1 + k * .15) + sag * (1 - xn * xn) + (noise(x * .0032 + k * 9.1) - .5) * 22 * sc + sway(x, k, ph)]);
+        }
+        const twist = (x, sg) => sg * wpx * .5 * Math.sin(x * .3 / wsc + ph);
+        if (P.wireSoft > 0) {                                   // defocus halo
+          c.strokeStyle = rgba(P.wire, .3 * P.wireSoft); c.lineWidth = wpx * 2.6;
+          c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
+        }
+        for (const sg of [1, -1]) { c.strokeStyle = P.wire; c.lineWidth = wpx * .66; c.beginPath(); pts.forEach((p, i) => { const y = p[1] + twist(p[0], sg); i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke(); }
+        c.globalCompositeOperation = 'lighter'; c.strokeStyle = 'rgba(170,182,205,.16)'; c.lineWidth = Math.max(.6, wpx * .16);
+        c.beginPath(); pts.forEach((p, i) => { const y = p[1] - wpx * .32; i ? c.lineTo(p[0], y) : c.moveTo(p[0], y); }); c.stroke();
+        if (lampI > .02) { const hl = lamps[0].head, g = c.createRadialGradient(hl[0], hl[1], 0, hl[0], hl[1], W * .5); g.addColorStop(0, rgba(P.lamp, .35 * lampI * P.lampLevel)); g.addColorStop(1, rgba(P.lamp, 0)); c.strokeStyle = g; c.lineWidth = Math.max(.6, wpx * .18); c.stroke(); }
+        c.globalCompositeOperation = 'source-over';
+        // barbs: irregular spacing, a knot on the wire and four tapered spikes
+        let bx = x0 + (25 + hash(k * 7.7) * 40) * wsc, n = 0;
+        while (bx < W) {
+          const i = Math.max(1, Math.min(pts.length - 2, Math.round((bx - x0) / 5))), p = pts[i], dir = Math.atan2(pts[i + 1][1] - pts[i - 1][1], pts[i + 1][0] - pts[i - 1][0]);
+          const L = Math.max(14, u * .03) * P.barbSize * (.8 + .5 * hash(k * 31 + n)), bw = wpx * .3, sw = Math.sin(tw * 1.4 + bx * .02 + k) * .1, off = hash(k * 11 + n * 3) * .35;
+          c.fillStyle = P.wire;
+          for (const an of [.62 + off, Math.PI - .62 - off * .6, Math.PI + .55 + off * .7, -.62 - off * .5]) {
+            const a2 = dir + an + sw, ex = p[0] + Math.cos(a2) * L, ey = p[1] + Math.sin(a2) * L, nx = -Math.sin(a2) * bw, ny = Math.cos(a2) * bw;
+            c.beginPath(); c.moveTo(p[0] + nx, p[1] + ny); c.lineTo(ex, ey); c.lineTo(p[0] - nx, p[1] - ny); c.closePath(); c.fill();
           }
-          c.stroke(); c.globalCompositeOperation = 'source-over';
+          c.beginPath(); c.ellipse(p[0], p[1], wpx * .95, wpx * .72, dir, 0, 6.3); c.fill();
+          n++; bx += (62 + hash(k * 13 + n * 1.7) * 70) * wsc;
         }
       }
     }

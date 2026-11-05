@@ -7,7 +7,7 @@
   /*DATA:END*/
 
   const params = [
-    { group: 'Map', key: 'region', label: 'Region', type: 'select', options: [['usa', 'United States'], ['europe', 'Europe'], ['atlantic', 'US + Europe']], def: 'usa' },
+    { group: 'Map', key: 'region', label: 'Region', type: 'select', options: [['usa', 'United States'], ['europe', 'Europe'], ['atlantic', 'US + Europe']], def: 'atlantic' },
     { key: 'fit', label: 'Fit', type: 'select', options: [['contain', 'Fit inside'], ['cover', 'Fill']], def: 'contain' },
     { key: 'zoom', label: 'Zoom', min: .5, max: 2.5, step: .05, def: 1 },
     { key: 'offX', label: 'Shift X', min: -.5, max: .5, step: .01, def: 0 },
@@ -21,7 +21,7 @@
     { key: 'cloudColor', label: 'Clouds', type: 'color', def: '#a9bdd9' },
     { group: 'Light', key: 'mode', label: 'Illuminate', type: 'select', options: [['both', 'Glow + state'], ['glow', 'Glow around pointer'], ['state', 'Whole state']], def: 'both' },
     { key: 'radius', label: 'Glow radius', min: 60, max: 600, step: 5, def: 230 },
-    { key: 'outlineGlow', label: 'Outline glow', min: 0, max: 1.5, step: .05, def: 1 },
+    { key: 'outlineGlow', label: 'Outline glow', min: 0, max: 1.5, step: .05, def: .8 },
     { key: 'landGlow', label: 'Land glow', min: 0, max: 1, step: .05, def: .35 },
     { key: 'bloom', label: 'Pointer bloom', min: 0, max: 1, step: .05, def: .3 },
     { key: 'stateFill', label: 'State fill', min: 0, max: 1, step: .02, def: .22 },
@@ -30,8 +30,8 @@
     { key: 'autopilot', label: 'Wander when idle', type: 'toggle', def: true },
     { key: 'labels', label: 'Name labels', type: 'toggle', def: false },
     { group: 'Lines', key: 'baseLine', label: 'Base line width', min: 0, max: 6, step: .1, def: 1.2 },
-    { key: 'lineWidth', label: 'Glow line width', min: .5, max: 4, step: .1, def: 1.4 },
-    { key: 'stateLine', label: 'State line width', min: .5, max: 6, step: .1, def: 2.2 },
+    { key: 'lineWidth', label: 'Glow line width', min: .5, max: 4, step: .1, def: 1 },
+    { key: 'stateLine', label: 'State line width', min: .5, max: 6, step: .1, def: 1.5 },
     { group: 'Clouds', key: 'clouds', label: 'Clouds on', type: 'toggle', def: true },
     { key: 'cloudOpacity', label: 'Opacity', min: 0, max: 1, step: .02, def: .18 },
     { key: 'cloudCover', label: 'Coverage', min: 0, max: 1, step: .02, def: .4 },
@@ -325,7 +325,7 @@
       if (glow) {
         if (P.landGlow > 0) { c.fillStyle = grad(c, sm.x, sm.y, R, lt, P.landGlow * .45 * gi); c.fill(L.land, 'evenodd'); if (P.neighbors) c.fill(L.ctx, 'evenodd'); }
         if (P.outlineGlow > 0) {
-          c.strokeStyle = grad(c, sm.x, sm.y, R, lt, Math.min(1, P.outlineGlow * gi * .35)); c.lineWidth = P.lineWidth * 5; c.stroke(L.borders);
+          c.strokeStyle = grad(c, sm.x, sm.y, R, lt, Math.min(1, P.outlineGlow * gi * .22)); c.lineWidth = P.lineWidth * 3; c.stroke(L.borders);
           c.strokeStyle = grad(c, sm.x, sm.y, R, lt, Math.min(1, P.outlineGlow * gi)); c.lineWidth = P.lineWidth; c.stroke(L.borders);
           if (P.neighbors) { c.lineWidth = P.lineWidth * .8; c.stroke(L.ctx); }
         }
@@ -335,7 +335,7 @@
         if (f.lit < .01) continue;
         c.globalAlpha = f.lit; c.fillStyle = 'rgba(' + lt + ',' + P.stateFill + ')'; c.fill(f.path, 'evenodd');
         c.strokeStyle = P.light; c.lineWidth = P.stateLine; c.stroke(f.path);
-        c.globalAlpha = f.lit * .28; c.lineWidth = P.stateLine * 4.5; c.stroke(f.path);
+        c.globalAlpha = f.lit * .16; c.lineWidth = P.stateLine * 3; c.stroke(f.path);
       }
       c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
       if (P.clouds) { if (texDirty) makeTex(); if (texA) drawClouds(); }

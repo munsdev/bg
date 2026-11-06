@@ -36,12 +36,10 @@
     { key: 'wireSoft', label: 'Out of focus', min: 0, max: 1, step: .05, def: .5 },
     { key: 'wireSag', label: 'Sag', min: 0, max: 80, step: 1, def: 2 },
     { key: 'wireTilt', label: 'Tilt (deg)', min: -8, max: 8, step: .5, def: -1.5 },
-    { group: 'Weather', key: 'season', label: 'Season', type: 'select', options: [['autumn', 'Autumn'], ['winter', 'Winter'], ['spring', 'Spring'], ['summer', 'Summer'], ['none', 'None']], def: 'autumn' },
+    { group: 'Weather', key: 'weather', label: 'Weather', type: 'select', options: [['clear', 'Clear'], ['rain', 'Rain'], ['snow', 'Snow'], ['fog', 'Fog']], def: 'clear' },
     { key: 'wind', label: 'Wind', min: 0, max: 2, step: .05, def: .6 },
     { key: 'vary', label: 'Weather changes over time', type: 'toggle', def: true },
-    { key: 'precip', label: 'Rain / snow', min: 0, max: 1, step: .05, def: .5 },
-    { key: 'particles', label: 'Leaves / motes / moths', min: 0, max: 1, step: .05, def: .5 },
-    { key: 'lightning', label: 'Heat lightning (summer)', type: 'toggle', def: false },
+    { key: 'precip', label: 'Rain / snow / fog amount', min: 0, max: 1, step: .05, def: .5 },
     { group: 'Atmosphere', key: 'fog', label: 'Fog', min: 0, max: 1, step: .05, def: .65 },
     { key: 'clouds', label: 'Sky clouds', min: 0, max: 1, step: .05, def: .4 },
     { key: 'grain', label: 'Film grain', min: 0, max: 1, step: .05, def: .5 },
@@ -209,8 +207,7 @@
     const m = { x: -1e4, y: -1e4 }; let active = false, lastMove = -1e9, energy = 0, raw = 0, lx = 0, ly = 0;
     let t = 0, tw = 0, clock = 0, idleNext = 0, lampEv = { until: 0, next: 800, seed: 0 };
     let cloudX = 0, wnd = P.wind, precipNow = P.precip, gustT = 1, gustTo = 1, gustNext = 4000, gustEnd = 0, lastAuto = null;
-    let parts = [], partSeason = '', flash = 0, flashNext = 0, SK = P.sky;
-    const moths = [];
+    let parts = [], partSeason = '', SK = P.sky, fogTex = null, fogKey = '';
     let wireTex = null, wireInfo = null, barbSpr = null, wireKey = '', wireLoading = '';
     const NV = 8;
     const pr = (x, y, z) => [vx + f * x / z, vy + f * (HE - y) / z];
@@ -284,7 +281,7 @@
 
     function drawScene(now) {
       q.setTransform(s, 0, 0, s, 0, 0); q.globalCompositeOperation = 'source-over'; q.globalAlpha = 1;
-      const TINT = { autumn: ['#5c4a36', .12], winter: ['#8a96aa', .2], spring: ['#4e5e58', .12], summer: ['#6c5a44', .13] }[P.season];
+      const TINT = { snow: ['#8a96aa', .16], rain: ['#4e5a60', .1], fog: ['#7c828a', .14] }[P.weather];
       SK = TINT ? hex2(P.sky, TINT[0], TINT[1]) : P.sky;
       const fogc = mixc(SK, '#ffffff', .2);
       let g = q.createLinearGradient(0, 0, 0, vy); g.addColorStop(0, mixc(SK, '#000000', .88)); g.addColorStop(1, mixc(SK, '#000000', .1));
@@ -297,7 +294,7 @@
       }
       g = q.createRadialGradient(vx, vy, 0, vx, vy, u * .8); g.addColorStop(0, rgba(fogc, .5 * P.fog + .1)); g.addColorStop(1, rgba(fogc, 0)); q.fillStyle = g; q.fillRect(0, 0, W, H);
       g = q.createLinearGradient(0, vy, 0, H); g.addColorStop(0, mixc(SK, '#000000', .3)); g.addColorStop(.3, mixc(SK, '#000000', .5)); g.addColorStop(1, mixc(SK, '#000000', .56)); q.fillStyle = g; q.fillRect(0, vy, W, H - vy);
-      if (P.season === 'winter') { g = q.createLinearGradient(0, vy, 0, H); g.addColorStop(0, 'rgba(210,218,230,.05)'); g.addColorStop(1, 'rgba(210,218,230,.12)'); q.fillStyle = g; q.fillRect(0, vy, W, H - vy); }
+      if (P.weather === 'snow') { g = q.createLinearGradient(0, vy, 0, H); g.addColorStop(0, 'rgba(210,218,230,.05)'); g.addColorStop(1, 'rgba(210,218,230,.12)'); q.fillStyle = g; q.fillRect(0, vy, W, H - vy); }
       // far line of trees, tower
       const treeC = mixc(SK, '#000000', .72);
       q.fillStyle = treeC; q.fillRect(0, vy - 2, W, 4);
@@ -365,13 +362,27 @@
         q.fillStyle = rgba('#fff3d6', Math.min(1, .7 * I)); q.beginPath(); q.arc(L.head[0], L.head[1], Math.max(1.2, 4 * f / L.z / 16), 0, 6.3); q.fill();
         q.globalCompositeOperation = 'source-over';
       }
-      if (P.season === 'spring' && lampI > .02) {               // wet ground: the lamp's light streaks down in the puddles
+      if (P.weather === 'rain' && lampI > .02) {               // wet ground: the lamp's light streaks down in the puddles
         const L0 = lamps[0], R3 = f * 2.2 / L0.z, gx = L0.head[0], gy = L0.base[1];
         q.save(); q.translate(gx, gy + R3 * .9); q.scale(.25, 1); g = q.createRadialGradient(0, 0, 0, 0, 0, R3 * 1.6);
         g.addColorStop(0, rgba(P.lamp, .2 * lampI)); g.addColorStop(1, rgba(P.lamp, 0)); q.globalCompositeOperation = 'lighter'; q.fillStyle = g; q.fillRect(-R3 * 2, -R3 * 2, R3 * 4, R3 * 4); q.restore(); q.globalCompositeOperation = 'source-over';
       }
       drawParts(q, false, lampI);
-      if (flash > .01) { g = q.createLinearGradient(0, 0, 0, vy + 4); g.addColorStop(0, rgba(fogc, .1 * flash)); g.addColorStop(1, rgba(fogc, .3 * flash)); q.globalCompositeOperation = 'lighter'; q.fillStyle = g; q.fillRect(0, 0, W, vy + 4); q.globalCompositeOperation = 'source-over'; }
+      if (P.weather === 'fog' && precipNow > .01) {           // fog: denser haze plus slow banks drifting across the yard with the wind
+        if (!skyTex) skyTex = makeSky();
+        q.fillStyle = rgba(fogc, (.18 * precipNow).toFixed(3)); q.fillRect(0, 0, W, H);
+        if (!fogTex || fogKey !== fogc) {                       // the cloud texture tinted to the haze color
+          fogKey = fogc; fogTex = document.createElement('canvas'); fogTex.width = fogTex.height = 256;
+          const fc = fogTex.getContext('2d'); fc.drawImage(skyTex, 0, 0); fc.globalCompositeOperation = 'source-in'; fc.fillStyle = fogc; fc.fillRect(0, 0, 256, 256);
+        }
+        for (const [sp, yy, hh, al] of [[1, .3, .5, .32], [1.7, .5, .6, .24]]) {
+          const pat = q.createPattern(fogTex, 'repeat'), tile = Math.max(W, 700) * 1.3, n = 28, y0 = H * yy, bh = H * hh / n;
+          pat.setTransform(new DOMMatrix().translate(cloudX * 3 * sp, y0).scale(tile / 256, tile / 256 * .5));
+          q.fillStyle = pat;
+          for (let i = 0; i < n; i++) { const e = Math.sin(Math.PI * (i + .5) / n); q.globalAlpha = al * precipNow * e * e; q.fillRect(0, y0 + i * bh, W, bh + 1); }   // soft top and bottom
+        }
+        q.globalAlpha = 1;
+      }
       if (P.exposure > 1) { q.globalCompositeOperation = 'lighter'; q.fillStyle = rgba(SK, (P.exposure - 1) * .3); q.fillRect(0, 0, W, H); q.globalCompositeOperation = 'source-over'; }
       else if (P.exposure < 1) { q.fillStyle = 'rgba(0,0,0,' + ((1 - P.exposure) * .8) + ')'; q.fillRect(0, 0, W, H); }
       // low fog drifting over the ground
@@ -387,36 +398,27 @@
         precipNow = P.precip * Math.max(0, Math.min(1.15, -.15 + 1.4 * noise(clock * .028 + 11)));
       } else { gustT = 1; wnd = P.wind; precipNow = P.precip; }
       cloudX += dt * (2 + wnd * 10);
-      if (P.season === 'summer' && P.lightning && !reduce) {
-        if (!flashNext) flashNext = now + 20000 + Math.random() * 30000;
-        if (now > flashNext) { flash = .8 + Math.random() * .4; flashNext = now + 25000 + Math.random() * 45000; }
-        flash *= Math.exp(-dt / (Math.random() < .2 ? .03 : .12)); if (Math.random() < .03 && flash > .2) flash = Math.min(1.2, flash + .5);
-      } else flash = 0;
       stepParts(now, dt);
     }
-    const rnd = Math.random, LEAF = ['#6e5236', '#7d5f3c', '#5c452e', '#866a46', '#694b30'];
+    const rnd = Math.random;
     function spawn(kind, fill) {
-      const z = rnd(), p = { kind, z, x: 0, y: 0, vx: 0, vy: 0, r: 0, rot: rnd() * 6.3, spin: (rnd() - .5) * 6, fl: rnd() * 6.3, ph: rnd() * 6.3, col: LEAF[Math.floor(rnd() * LEAF.length)] };
-      if (kind === 'leaf') { p.x = -30 - rnd() * 60; p.y = H * (.08 + rnd() * .5); p.r = (9 + rnd() * 9) * (.6 + z) * sc; p.vy = 10 + rnd() * 20; }
-      else { p.x = (rnd() * 1.3 - .3) * W; p.y = fill ? rnd() * H : -10 - rnd() * 40; }
+      const z = rnd(), p = { kind, z, x: (rnd() * 1.3 - .3) * W, y: fill ? rnd() * H : -10 - rnd() * 40, vx: 0, vy: 0, ph: rnd() * 6.3 };
       if (kind === 'mote') { p.x = fill ? rnd() * W : -10; p.y = rnd() * H; }
       return p;
     }
     function stepParts(now, dt) {
-      if (reduce || P.season === 'none') { parts = []; return; }
-      const fresh = partSeason !== P.season; partSeason = P.season; if (fresh) parts = [];
+      if (reduce || (P.weather !== 'rain' && P.weather !== 'snow')) { parts = []; partSeason = P.weather; return; }
+      const fresh = partSeason !== P.weather; partSeason = P.weather; if (fresh) parts = [];
       const area = (W * H) / (1440 * 810), wx = wnd * 55 * sc;
-      const want = { snow: P.season === 'winter' ? Math.round(240 * area * precipNow) : 0, rain: P.season === 'spring' ? Math.round(170 * area * precipNow) : 0,
-        mote: (P.season === 'winter' || P.season === 'summer') ? Math.round(28 * area * P.particles) : 0 };
+      const want = { snow: P.weather === 'snow' ? Math.round(240 * area * precipNow) : 0, rain: P.weather === 'rain' ? Math.round(170 * area * precipNow) : 0,
+        mote: P.weather === 'snow' ? Math.round(14 * area) : 0 };
       for (const kind in want) { let n = 0; for (const p of parts) if (p.kind === kind) n++; for (; n < want[kind]; n++) parts.push(spawn(kind, fresh)); }
-      if (P.season === 'autumn' && P.particles > 0 && rnd() < dt * P.particles * (.12 + 1.6 * Math.max(0, gustT - 1.1) + .1 * wnd)) parts.push(spawn('leaf'));
       const keep = [];
       for (const p of parts) {
         const z = p.z;
         if (p.kind === 'snow') { p.vy = (22 + 40 * z) * sc; p.vx = wx * (.35 + z * .9) + Math.sin(clock * 1.3 + p.ph) * 12 * sc; }
         else if (p.kind === 'rain') { p.vy = (620 + 420 * z) * sc; p.vx = wx * (.6 + z * .5); }
         else if (p.kind === 'mote') { p.vx = wx * (.4 + z * .8) + Math.sin(clock * .7 + p.ph) * 6 * sc; p.vy = Math.sin(clock * .5 + p.ph * 2) * 5 * sc; }
-        else if (p.kind === 'leaf') { p.vx += ((wx * (1.1 + z * .8) + 25 * sc) - p.vx) * Math.min(1, dt * 1.5); p.vy = (5 + 8 * z) * sc + Math.sin(clock * 1.9 + p.ph) * 20 * sc; p.rot += p.spin * dt * (.4 + wnd * .5); p.fl += dt * (3 + wnd * 2); }
         p.x += p.vx * dt; p.y += p.vy * dt;
         const out = p.y > H + 20 || p.x > W + 60 || p.x < -0.35 * W - 80;
         if (!out) keep.push(p);
@@ -433,23 +435,6 @@
         if (p.kind === 'snow') { const r = (.6 + p.z * 2.4) * sc; c.fillStyle = 'rgba(235,240,248,' + (.35 + .45 * p.z + .3 * lit).toFixed(3) + ')'; c.beginPath(); c.arc(p.x, p.y, r, 0, 6.3); c.fill(); }
         else if (p.kind === 'mote') { const r = (.5 + p.z * 1.1) * sc; c.fillStyle = 'rgba(220,214,200,' + (.16 + .2 * p.z + .4 * lit).toFixed(3) + ')'; c.fillRect(p.x - r, p.y - r, r * 2, r * 2); }
         else if (p.kind === 'rain') { c.strokeStyle = 'rgba(200,210,226,' + (.1 + .16 * p.z + .45 * lit).toFixed(3) + ')'; c.lineWidth = (.5 + .7 * p.z) * sc; c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - p.vx * .022, p.y - p.vy * .022); c.stroke(); }
-        else if (p.kind === 'leaf') {
-          const L = p.r, w2 = L * .45;
-          c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.scale(1, .25 + .75 * Math.abs(Math.cos(p.fl)));
-          c.fillStyle = mixc(p.col, P.lamp, Math.min(.35, lit * .5)); c.beginPath(); c.moveTo(-L, 0); c.quadraticCurveTo(0, -w2, L, 0); c.quadraticCurveTo(0, w2, -L, 0); c.fill();
-          c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = Math.max(.6, L * .08); c.beginPath(); c.moveTo(-L * 1.25, 0); c.lineTo(L * .8, 0); c.stroke();
-          c.restore();
-        }
-      }
-    }
-    function drawMoths(c, lampI) {                           // summer: a few moths circling the street lamp
-      const L0 = lamps[0]; if (!L0 || lampI < .05 || reduce) return;
-      const n = Math.round(6 * P.particles); while (moths.length < n) moths.push({ a: rnd() * 6.3, w: (rnd() < .5 ? -1 : 1) * (2 + rnd() * 3), r: .5 + rnd() * .8, ph: rnd() * 6.3 }); moths.length = n;
-      const R = f * .9 / L0.z;
-      for (const mo of moths) {
-        mo.a += mo.w * .016 * (1 + .5 * Math.sin(clock * 3 + mo.ph)); const rr = R * (mo.r + .25 * Math.sin(clock * 5 + mo.ph));
-        const x = L0.head[0] + Math.cos(mo.a) * rr + Math.sin(clock * 11 + mo.ph) * R * .08, y = L0.head[1] + Math.sin(mo.a) * rr * .6 + R * .15;
-        c.fillStyle = 'rgba(255,236,200,' + (.75 * lampI).toFixed(3) + ')'; c.beginPath(); c.arc(x, y, 1.3 * sc, 0, 6.3); c.fill();
       }
     }
 
@@ -548,7 +533,6 @@
       if (s < .95) { const d = .55 / s; c.globalAlpha = .5; c.drawImage(lo, d, d * .6, W, H); c.globalAlpha = .34; c.drawImage(lo, -d, -d * .6, W, H); c.globalAlpha = 1; }
       if (P.wireOn) drawWire(c, lampI);
       drawParts(c, true, lampI);
-      if (P.season === 'summer') drawMoths(c, lampI);
       if (P.vignette > 0) { const g = c.createRadialGradient(W / 2, H * .46, Math.min(W, H) * .2, W / 2, H * .46, Math.hypot(W, H) * .62); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,' + (.85 * P.vignette) + ')'); c.fillStyle = g; c.fillRect(0, 0, W, H); }
       if (P.grain > 0) { c.save(); c.globalAlpha = .1 * P.grain; c.globalCompositeOperation = 'overlay'; const ox = Math.floor(Math.random() * 128), oy = Math.floor(Math.random() * 128); c.translate(-ox, -oy); c.fillStyle = grainPat; c.fillRect(0, 0, W + 128, H + 128); c.restore(); }
     }

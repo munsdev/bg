@@ -49,3 +49,7 @@ Animated hero backgrounds. Static site, no build step.
 ## Local preview
 
 `python3 -m http.server 8080` in this folder, then open http://localhost:8080/. Pages use root-relative paths, so serve from the repo root.
+
+## License
+
+MIT. See `LICENSE`.
